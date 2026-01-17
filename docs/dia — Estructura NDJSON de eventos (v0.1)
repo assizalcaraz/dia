@@ -1,0 +1,217 @@
+````md
+# /dia — Estructura NDJSON de eventos (v0.1)
+
+Este documento define el formato **NDJSON** (1 JSON por línea) para registrar eventos de sesiones en `/dia`.
+Objetivo: capturar evidencia **inmutable**, fácil de buscar, fácil de vectorizar (Chroma) y apta para auditoría.
+
+---
+
+## Archivo(s) y convención
+
+- Archivo recomendado (append-only):
+  - `index/events.ndjson`
+
+- Opcional (si querés por día):
+  - `index/events/YYYY-MM-DD.ndjson`
+
+Regla: **append-only** (no se edita, no se reescribe).
+
+---
+
+## Campos mínimos (obligatorios)
+
+Cada línea es un objeto JSON con estos campos:
+
+- `event_id` (string) — UUID o hash único
+- `ts` (string) — timestamp ISO 8601 con zona (`2026-01-18T10:04:12-03:00`)
+- `type` (string) — nombre del evento (ver catálogo)
+- `session` (object) — referencia de sesión
+- `actor` (object) — humano o agente (ambos son “usuario”)
+- `project` (object) — etiqueta y contexto del proyecto
+- `repo` (object|null) — estado del repo si aplica
+- `payload` (object) — datos específicos del evento (tipo-dependiente)
+- `links` (array) — enlaces/referencias (issues, PR, docs, etc.)
+
+---
+
+## Esquema base (plantilla)
+
+```json
+{
+  "event_id": "evt_01J2Q9E7K8Z9V7Q3H2P4G1M0AB",
+  "ts": "2026-01-18T10:04:12-03:00",
+  "type": "SessionStarted",
+  "session": {
+    "day_id": "2026-01-18",
+    "session_id": "S01",
+    "intent": "Fijar v0.1 de /dia (start/end) y generar reporte de limpieza",
+    "dod": "dia end genera CIERRE y LIMPIEZA con diff y commits",
+    "mode": "it"
+  },
+  "actor": {
+    "user_id": "u_assiz",
+    "user_type": "human",
+    "role": "director",
+    "client": "cli"
+  },
+  "project": {
+    "tag": "surfix",
+    "area": "it",
+    "context": "deploy/rollback/docs hygiene"
+  },
+  "repo": {
+    "path": "/path/to/surfix",
+    "vcs": "git",
+    "branch": "main",
+    "start_sha": "a1b2c3d4",
+    "end_sha": null,
+    "dirty": true
+  },
+  "payload": {},
+  "links": []
+}
+````
+
+Notas:
+
+* `mode`: `"it" | "maker" | "study" | "life"` (o lo que definas)
+* `repo.end_sha` puede ser `null` hasta el cierre.
+* `payload` cambia según `type`.
+
+---
+
+## Catálogo de eventos (v0.1)
+
+### Sesión
+
+* `SessionStarted`
+* `SessionEnded`
+* `SessionIntentUpdated` (opcional, si permitís ajustar intención)
+* `SessionDodUpdated` (opcional)
+* `SessionCheckpoint` (campana intermedia)
+* `MentorDisabled`
+* `MentorEnabled`
+
+### Notas / capturas
+
+* `QuickNoteCaptured` (texto)
+* `VoiceNoteCaptured` (v1+)
+* `ScreenshotCaptured` (v1+)
+
+### Auditoría repo / disciplina
+
+* `RepoBaselineCaptured`
+* `RepoDiffComputed`
+* `CommitCreated` (registrado por /dia si detecta commit durante sesión)
+* `CommitOverdue`
+* `LargeCommitDetected`
+* `SuspiciousFileDetected`
+* `DocsDriftDetected` (docs creciendo en scratch / duplicadas)
+* `RollbackPlanMissing` (si aplica)
+
+### Documentación (sugerencias, no cambios)
+
+* `DocsSuggestionIssued`
+* `CleanupTaskGenerated`
+
+---
+
+## Eventos clave (ejemplos NDJSON)
+
+> **NDJSON**: cada bloque de abajo representa **1 línea** en el archivo.
+
+### 1) SessionStarted
+
+```json
+{"event_id":"evt_01J2QA0KJ8F1N8Y7D4B7H3C2XY","ts":"2026-01-18T10:04:12-03:00","type":"SessionStarted","session":{"day_id":"2026-01-18","session_id":"S01","intent":"Auditar repo y generar plan de limpieza","dod":"CIERRE y LIMPIEZA generados por dia end","mode":"it"},"actor":{"user_id":"u_assiz","user_type":"human","role":"director","client":"cli"},"project":{"tag":"surfix","area":"it","context":"deploy/rollback/docs hygiene"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":false},"payload":{"cmd":"dia start --project surfix --repo /path/to/surfix"},"links":[]}
+```
+
+### 2) RepoBaselineCaptured
+
+```json
+{"event_id":"evt_01J2QA1G2TQW0R8C8N3KQ0ZK7M","ts":"2026-01-18T10:04:18-03:00","type":"RepoBaselineCaptured","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"cronista","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":false},"payload":{"status_porcelain":"","tracked_files":1284,"untracked_files":0},"links":[{"kind":"artifact","ref":"artifacts/S01_repo_baseline.txt"}]}
+```
+
+### 3) QuickNoteCaptured (texto)
+
+```json
+{"event_id":"evt_01J2QA3M5R3X9J6K5Z7D0A1P2Q","ts":"2026-01-18T10:20:02-03:00","type":"QuickNoteCaptured","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"u_assiz","user_type":"human","role":"operador","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":null,"payload":{"text":"Rollback no es inmediato: falta checklist pre-deploy + comando de revert.","channel":"cli"},"links":[]}
+```
+
+### 4) CommitCreated (detectado por /dia)
+
+```json
+{"event_id":"evt_01J2QAA4P9K2X7H6B4F1M0N9VZ","ts":"2026-01-18T11:41:10-03:00","type":"CommitCreated","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"cronista","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":false},"payload":{"sha":"d4c3b2a1","summary":"fix: stabilize rollback path [#sesion S01]","files_changed":6,"additions":142,"deletions":37},"links":[]}
+```
+
+### 5) CommitOverdue (>180 min sin commits)
+
+```json
+{"event_id":"evt_01J2QABKQJ6XW2G2Z1M6Q9V8T1","ts":"2026-01-18T13:12:00-03:00","type":"CommitOverdue","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"auxiliar","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":true},"payload":{"threshold_minutes":180,"minutes_since_last_commit":196,"hint":"Hacé commit chico o checkpoint; esto va a aparecer en el cierre."},"links":[]}
+```
+
+### 6) LargeCommitDetected (+9000 LOC)
+
+```json
+{"event_id":"evt_01J2QACR4JH7TQ8M2V5P0D8Z3K","ts":"2026-01-18T14:22:33-03:00","type":"LargeCommitDetected","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"cronista","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":false},"payload":{"sha":"e9f8g7h6","additions":9000,"deletions":120,"files_changed":44,"policy":{"warn_over_additions":800}},"links":[]}
+```
+
+### 7) SuspiciousFileDetected (docs/scratch, test suelto)
+
+```json
+{"event_id":"evt_01J2QADWZ0P6J8S3B2N1M4K9QH","ts":"2026-01-18T14:30:00-03:00","type":"SuspiciousFileDetected","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"auxiliar","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":null,"dirty":true},"payload":{"matches":[{"path":"docs/scratch/rollback_notes.md","rule":"docs_scratch"},{"path":"15_test.py","rule":"test_outside_tests"}]},"links":[]}
+```
+
+### 8) CleanupTaskGenerated (acciones concretas)
+
+```json
+{"event_id":"evt_01J2QAE8Q2M1T9V4B3C0H7K6LZ","ts":"2026-01-18T14:35:10-03:00","type":"CleanupTaskGenerated","session":{"day_id":"2026-01-18","session_id":"S01"},"actor":{"user_id":"dia","user_type":"agent","role":"auxiliar","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":null,"payload":{"tasks":[{"id":"cln_001","title":"Mover docs scratch","do":"mover docs/scratch/*.md -> docs/_scratch/","why":"evitar drift y duplicación","priority":"high"},{"id":"cln_002","title":"Consolidar test suelto","do":"mover 15_test.py -> tests/test_<feature>.py","why":"convención tests","priority":"high"}]},"links":[{"kind":"artifact","ref":"bitacora/2026-01-18/LIMPIEZA_S01.md"}]}
+```
+
+### 9) SessionEnded
+
+```json
+{"event_id":"evt_01J2QAFN6G4Z8N2V7D1Q0W3M9A","ts":"2026-01-18T15:02:00-03:00","type":"SessionEnded","session":{"day_id":"2026-01-18","session_id":"S01","result":"closed"},"actor":{"user_id":"u_assiz","user_type":"human","role":"director","client":"cli"},"project":{"tag":"surfix","area":"it"},"repo":{"path":"/path/to/surfix","vcs":"git","branch":"main","start_sha":"a1b2c3d4","end_sha":"f0e1d2c3","dirty":false},"payload":{"cmd":"dia end","outputs":{"cierre":"bitacora/2026-01-18/CIERRE_S01.md","limpieza":"bitacora/2026-01-18/LIMPIEZA_S01.md"},"duration_min":298},"links":[{"kind":"artifact","ref":"bitacora/2026-01-18/CIERRE_S01.md"},{"kind":"artifact","ref":"bitacora/2026-01-18/LIMPIEZA_S01.md"}]}
+```
+
+---
+
+## Reglas de diseño (para que Chroma y grafos no sean basura)
+
+1. **Campos estables**: no cambies nombres cada semana.
+2. **Eventos atómicos**: 1 cosa por evento.
+3. **Append-only**: nunca reescribir.
+4. **Referencias, no pegotes**:
+
+   * diffs grandes y logs -> `artifacts/` (enlaces en `links`)
+5. **Tipado simple**:
+
+   * `type` en PascalCase, corto y consistente.
+
+---
+
+## Tabla mínima de valores recomendados
+
+* `actor.user_type`: `human | agent`
+* `actor.role`: `director | cronista | operador | auxiliar`
+* `actor.client`: `cli | gui | api`
+* `project.area`: `it | maker | study | life`
+* `payload.priority`: `low | medium | high`
+
+---
+
+## Próximo paso sugerido
+
+Definir `rules.json` (o similar) para:
+
+* umbrales de `CommitOverdue`
+* umbrales de `LargeCommitDetected`
+* patrones de archivos sospechosos
+
+```
+
+--- 
+
+Si querés, el siguiente bloque lógico es el **formato de `sessions.ndjson`** (índice por sesión) o el **`rules.json`** de detectores/umbrales.
+::contentReference[oaicite:0]{index=0}
+```
