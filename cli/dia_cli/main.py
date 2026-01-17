@@ -8,8 +8,10 @@ import subprocess
 from typing import Any, Optional
 
 from . import config
+from .cursor_reminder import write_reminder_to_file
 from .git_ops import (
     changed_files,
+    changed_files_working,
     current_branch,
     diff,
     empty_tree_sha,
@@ -126,7 +128,6 @@ def _write_artifact(root: Path, filename: str, content: str) -> Path:
 def _suggest_commit_message(
     session_id: str, rules: dict[str, Any], files: list[str]
 ) -> str:
-    commit_tag = rules.get("commit_tag", "[dia]")
     if files and all(path.startswith("docs/") for path in files):
         commit_type = "docs"
     elif files and any(path.startswith("tests/") or "/tests/" in path for path in files):
@@ -135,7 +136,8 @@ def _suggest_commit_message(
         commit_type = "feat"
     else:
         commit_type = "chore"
-    return f'{commit_type}: pre-feat checkpoint {commit_tag} [#sesion {session_id}]'
+    # 🦾 al inicio para identificación rápida en git log
+    return f'🦾 {commit_type}: pre-feat checkpoint [#sesion {session_id}]'
 
 
 def _cleanup_tasks(rules: dict[str, Any], files: list[str]) -> list[str]:
@@ -233,6 +235,10 @@ def cmd_start(args: argparse.Namespace) -> int:
         start_sha,
     )
 
+    # Generar recordatorio para Cursor en el repo activo
+    reminder_path = repo_path / ".cursorrules"
+    write_reminder_to_file(reminder_path)
+
     print(f"Sesion {session_id} iniciada. Bitacora: {bitacora_path}")
     return 0
 
@@ -253,10 +259,21 @@ def cmd_pre_feat(args: argparse.Namespace) -> int:
     if not start_sha:
         start_sha = empty_tree_sha(repo_path)
 
-    files = changed_files(repo_path, f"{start_sha}..HEAD")
+    head = head_sha(repo_path)
+    if head is None:
+        files = changed_files_working(repo_path)
+    else:
+        files = changed_files(repo_path, f"{start_sha}..HEAD")
     rules = load_rules(config.rules_path(root))
     message = _suggest_commit_message(session_id, rules, files)
-    command = f'git commit -m "{message}"'
+    # Usar git-commit-cursor para commits de Cursor/IA (autoría identificable)
+    cli_root = Path(__file__).resolve().parents[1]
+    commit_cursor_path = cli_root / "git-commit-cursor"
+    if commit_cursor_path.exists():
+        command = f'git-commit-cursor -m "{message}"'
+    else:
+        # Fallback si no está en PATH
+        command = f'{commit_cursor_path} -m "{message}"'
 
     event = _build_event(
         "CommitSuggestionIssued",
@@ -291,11 +308,16 @@ def cmd_end(args: argparse.Namespace) -> int:
 
     branch = current_branch(repo_path)
     end_sha = head_sha(repo_path)
-    files = changed_files(repo_path, f"{start_sha}..{end_sha}")
-    commits = log_oneline(repo_path, f"{start_sha}..{end_sha}")
-    commit_count = len([line for line in commits.splitlines() if line.strip()])
-
-    diff_output = diff(repo_path, f"{start_sha}..{end_sha}")
+    if end_sha is None:
+        files = changed_files_working(repo_path)
+        commits = ""
+        commit_count = 0
+        diff_output = diff(repo_path)
+    else:
+        files = changed_files(repo_path, f"{start_sha}..{end_sha}")
+        commits = log_oneline(repo_path, f"{start_sha}..{end_sha}")
+        commit_count = len([line for line in commits.splitlines() if line.strip()])
+        diff_output = diff(repo_path, f"{start_sha}..{end_sha}")
     diff_artifact = _write_artifact(root, f"{session_id}_repo_diff_end.patch", diff_output)
 
     session = {

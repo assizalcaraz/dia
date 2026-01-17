@@ -67,15 +67,15 @@ Qué debería pasar:
 - La UI muestra una sesión activa en zona viva.
 
 ## 3) Checkpoint de éxito (`dia pre-feat`)
-Ejemplo:
+Desde el repo donde estás trabajando:
 
 ```
-dia pre-feat \
-  --project surfix \
-  --area it \
-  --repo /ruta/al/repo \
-  --data-root /ruta/al/monorepo/data
+dia pre-feat --data-root /ruta/al/monorepo/data --area it
 ```
+
+Notas:
+- Usa el directorio actual como repo si no pasás `--repo`.
+- No ejecuta commits, solo sugiere el comando.
 
 Qué debería pasar:
 - Se imprime **solo** un comando sugerido:
@@ -107,6 +107,57 @@ Qué debería pasar:
 - `events.ndjson` crece en append-only.
 - `Sxx.md`, `CIERRE_Sxx.md`, `LIMPIEZA_Sxx.md` existen.
 - UI actualiza zona indeleble/viva sin errores.
+
+## 6) Convención de commits: distinguir manual vs automatizado
+
+**Sistema de identificación**:
+- **Commits de Cursor/IA**: Usan `git-commit-cursor` con autoría `Cursor Assistant <cursor@dia.local>` y prefijo 🦾
+- **Commits manuales**: Usan `git -M` con tu autoría normal, sin emoji
+
+**Commits automatizados (Cursor)**:
+Los commits sugeridos por `dia pre-feat` usan `git-commit-cursor`:
+```bash
+dia pre-feat --data-root /path/to/data
+# → sugiere: git-commit-cursor -m "🦾 feat: pre-feat checkpoint [#sesion Sxx]"
+```
+
+Esto genera commits con:
+- Autor: `Cursor Assistant <cursor@dia.local>`
+- Mensaje con 🦾 al INICIO para identificación rápida en git log
+- Sin `[dia]` (se removió por confusión)
+
+**Commits manuales (tuyos)**:
+Para hacer un commit realmente tuyo (sin emoji, con tu autoría):
+```bash
+# Opción 1: agregar al PATH y usar como alias
+export PATH="$PATH:/Users/joseassizalcarazbaxter/Developer/dia/cli"
+git -M "feat: mi cambio manual"
+
+# Opción 2: usar directamente
+/path/to/dia/cli/git-M "feat: mi cambio manual"
+```
+
+**Resultado en git log**:
+- `Cursor Assistant <cursor@dia.local>` + 🦾 = commit de Cursor/IA
+- Tu nombre + sin 🦾 = commit manual tuyo
+
+**Por qué**: Cursor puede hacer muchos commits. Con este sistema quedan claramente identificados en el git log por autoría y prefijo visual.
+
+## 7) Recordatorios automáticos para Cursor
+
+**Al iniciar sesión**: `dia start` genera automáticamente `.cursorrules` en el repo activo.
+
+Este archivo contiene las reglas de workflow que Cursor lee automáticamente:
+- Convención de commits (🦾 al inicio, usar `git-commit-cursor`)
+- Autoría identificable
+- Workflow /dia
+
+**Actualización periódica**: Cada vez que ejecutás `dia start`, se regenera `.cursorrules` con las reglas actuales.
+
+**Manual**: También podés generar el recordatorio manualmente:
+```bash
+python3 -m dia_cli.cursor_reminder > .cursorrules
+```
 
 ## Notas
 - El CLI no ejecuta commits ni pushes.

@@ -69,3 +69,14 @@ def tracked_files_count(repo_path: Path) -> int:
 
 def empty_tree_sha(repo_path: Path) -> str:
     return run_git(repo_path, ["hash-object", "-t", "tree", "/dev/null"])
+
+
+def changed_files_working(repo_path: Path) -> list[str]:
+    staged = run_git(repo_path, ["diff", "--name-only", "--cached"])
+    unstaged = run_git(repo_path, ["diff", "--name-only"])
+    files = set()
+    for output in (staged, unstaged):
+        if not output:
+            continue
+        files.update(line.strip() for line in output.splitlines() if line.strip())
+    return sorted(files)
