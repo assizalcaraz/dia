@@ -81,7 +81,8 @@
   });
 </script>
 
-<div class="page">
+<div class="main-container">
+  <div class="page" class:docs-fullscreen={activeTab === "docs"}>
   <section class="panel">
     <h2>Zona indeleble</h2>
     <div class="tabs">
@@ -116,12 +117,13 @@
     </div>
 
     {#if activeTab === "overview"}
-      {#if loading}
-        <div class="loading-state">
-          <p class="muted">Cargando...</p>
-        </div>
-      {:else}
-        <div class="metrics-grid">
+      <div class="tab-content">
+        {#if loading}
+          <div class="loading-state">
+            <p class="muted">Cargando...</p>
+          </div>
+        {:else}
+          <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-value">{dayToday?.sessions_count ?? 0}</div>
             <div class="metric-label">Sesiones hoy</div>
@@ -170,20 +172,28 @@
               <p class="muted">Sin resúmenes rolling. Ejecuta 'dia summarize --mode rolling' para generar.</p>
             </div>
           {/if}
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     {:else if activeTab === "bitacora"}
-      <BitacoraViewer apiBase={API_BASE} initialDayId={today} />
+      <div class="tab-content">
+        <BitacoraViewer apiBase={API_BASE} initialDayId={today} />
+      </div>
     {:else if activeTab === "summaries"}
-      <SummariesViewer apiBase={API_BASE} initialDayId={today} />
+      <div class="tab-content">
+        <SummariesViewer apiBase={API_BASE} initialDayId={today} />
+      </div>
     {:else if activeTab === "docs"}
-      <DocsViewer apiBase={API_BASE} />
+      <div class="tab-content">
+        <DocsViewer apiBase={API_BASE} />
+      </div>
     {/if}
   </section>
 
   <section class="panel">
     <h2>Zona viva</h2>
-    {#if loading}
+    <div class="tab-content">
+      {#if loading}
       <div class="loading-state">
         <p class="muted">Cargando...</p>
       </div>
@@ -335,6 +345,8 @@
           <p class="muted">No hay errores abiertos.</p>
         </div>
       {/if}
-    {/if}
+      {/if}
+    </div>
   </section>
+  </div>
 </div>

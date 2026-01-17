@@ -26,6 +26,9 @@
   .markdown-content {
     line-height: 1.6;
     color: var(--color-text);
+    max-width: 100%;
+    overflow-wrap: break-word;
+    word-wrap: break-word;
   }
 
   .markdown-content :global(h1) {
@@ -93,6 +96,8 @@
     padding: var(--spacing-md);
     overflow-x: auto;
     margin: var(--spacing-md) 0;
+    max-width: 100%;
+    box-sizing: border-box;
   }
 
   .markdown-content :global(pre code) {
@@ -121,8 +126,17 @@
 
   .markdown-content :global(table) {
     width: 100%;
+    max-width: 100%;
     border-collapse: collapse;
     margin: var(--spacing-md) 0;
+    table-layout: auto;
+    overflow-x: auto;
+    display: block;
+  }
+  
+  .markdown-content :global(table) :global(tbody) {
+    display: table;
+    width: 100%;
   }
 
   .markdown-content :global(th),

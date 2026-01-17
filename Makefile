@@ -1,7 +1,10 @@
-.PHONY: up down logs restart
+.PHONY: up up-dev down logs restart
 
 up:
 	docker compose up --build
+
+up-dev:
+	docker compose up --build -d
 
 down:
 	docker compose down

@@ -177,6 +177,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
+    height: 100%;
+    overflow: hidden;
   }
 
   .viewer-header {
@@ -184,6 +186,7 @@
     align-items: center;
     gap: var(--spacing-md);
     margin-bottom: var(--spacing-md);
+    flex-shrink: 0;
   }
 
   .label {
@@ -212,7 +215,9 @@
     display: grid;
     grid-template-columns: 300px 1fr;
     gap: var(--spacing-lg);
-    min-height: 400px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   @media (max-width: 768px) {
@@ -227,7 +232,7 @@
     padding: var(--spacing-md);
     background: var(--color-surface);
     overflow-y: auto;
-    max-height: 70vh;
+    height: 100%;
   }
 
   .list-title {
@@ -294,7 +299,7 @@
     padding: var(--spacing-lg);
     background: var(--color-bg);
     overflow-y: auto;
-    max-height: 70vh;
+    height: 100%;
   }
 
   .content-wrapper {

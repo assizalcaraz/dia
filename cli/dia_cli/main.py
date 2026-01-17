@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import uuid
 from pathlib import Path
@@ -8,6 +9,7 @@ import subprocess
 from typing import Any, Optional
 
 from . import config
+from .config import captures_dir
 from .cursor_reminder import write_reminder_to_file
 from .git_ops import (
     changed_files,
@@ -25,7 +27,15 @@ from .ndjson import append_line
 from .rules import load_rules
 from .sessions import current_session, next_session_id
 from .templates import cierre_template, limpieza_template, session_start_template
-from .utils import day_id, now_iso, read_json_lines, write_text
+from .utils import (
+    compute_content_hash,
+    day_id,
+    find_last_unfixed_capture,
+    now_iso,
+    read_json_lines,
+    read_text,
+    write_text,
+)
 
 
 def _event_id() -> str:
@@ -111,12 +121,30 @@ def _write_bitacora_start(
     branch: str,
     start_sha: str,
 ) -> Path:
-    path = config.bitacora_dir(root) / day / f"{session_id}.md"
-    content = session_start_template(
-        day, session_id, intent, dod, mode, repo_path, branch, start_sha
+    """Escribe inicio de sesión en bitácora de jornada (archivo único por día)."""
+    from .templates import session_auto_section_template
+    from .utils import append_to_jornada_auto_section
+    
+    # Archivo único por jornada: bitacora/YYYY-MM-DD.md
+    jornada_path = config.bitacora_dir(root) / f"{day}.md"
+    
+    # Generar contenido de sesión para sección automática
+    session_content = session_auto_section_template(
+        session_id=session_id,
+        start_ts=now_iso(),
+        intent=intent,
+        dod=dod,
+        mode=mode,
+        repo_path=str(repo_path),
+        branch=branch,
+        start_sha=start_sha or "None",
     )
-    write_text(path, content)
-    return path
+    
+    # Agregar evento inicial
+    session_content += f"- {now_iso()} — SessionStarted\n"
+    
+    append_to_jornada_auto_section(jornada_path, session_content)
+    return jornada_path
 
 
 def _write_artifact(root: Path, filename: str, content: str) -> Path:
@@ -182,7 +210,13 @@ def cmd_start(args: argparse.Namespace) -> int:
     sessions_path = _sessions_path(root)
     events_path = _events_path(root)
 
-    session_id = next_session_id(day_id(), sessions_path)
+    # Verificar si el día está cerrado
+    current_day = day_id()
+    events = list(read_json_lines(events_path))
+    day_events = [e for e in events if e.get("session", {}).get("day_id") == current_day]
+    day_closed = any(e.get("type") == "DayClosed" for e in day_events)
+
+    session_id = next_session_id(current_day, sessions_path)
     actor = _actor_from_args(args)
     project = _project_from_args(args)
 
@@ -193,13 +227,17 @@ def cmd_start(args: argparse.Namespace) -> int:
     repo_state = _repo_payload(repo_path, branch, start_sha)
 
     session = _session_payload(args, session_id)
+    
+    # Determinar tipo de evento según si el día está cerrado
+    event_type = "SessionStartedAfterDayClosed" if day_closed else "SessionStarted"
+    
     start_event = _build_event(
-        "SessionStarted",
+        event_type,
         session=session,
         actor=actor,
         project=project,
         repo=repo_state,
-        payload={"cmd": "dia start"},
+        payload={"cmd": "dia start", "day_was_closed": day_closed},
     )
     baseline_event = _build_event(
         "RepoBaselineCaptured",
@@ -265,7 +303,25 @@ def cmd_pre_feat(args: argparse.Namespace) -> int:
     else:
         files = changed_files(repo_path, f"{start_sha}..HEAD")
     rules = load_rules(config.rules_path(root))
-    message = _suggest_commit_message(session_id, rules, files)
+    
+    # Buscar error activo sin fix
+    day_id_val = current["session"]["day_id"]
+    active_error = find_last_unfixed_capture(events_path, session_id, day_id_val)
+    
+    if active_error:
+        # Hay un error activo, sugerir mensaje de fix
+        error_hash = active_error.get("payload", {}).get("error_hash", "")[:8]
+        error_title = active_error.get("payload", {}).get("title", "error")
+        message = f'🦾 fix: {error_title} [dia] [#sesion {session_id}] [#error {error_hash}]'
+        error_ref = {
+            "error_event_id": active_error.get("event_id"),
+            "error_hash": active_error.get("payload", {}).get("error_hash"),
+        }
+    else:
+        # Mensaje normal
+        message = _suggest_commit_message(session_id, rules, files)
+        error_ref = None
+    
     # Usar git-commit-cursor para commits de Cursor/IA (autoría identificable)
     cli_root = Path(__file__).resolve().parents[1]
     commit_cursor_path = cli_root / "git-commit-cursor"
@@ -275,13 +331,17 @@ def cmd_pre_feat(args: argparse.Namespace) -> int:
         # Fallback si no está en PATH
         command = f'{commit_cursor_path} -m "{message}"'
 
+    payload = {"command": command, "files": files}
+    if error_ref:
+        payload["error_ref"] = error_ref
+
     event = _build_event(
         "CommitSuggestionIssued",
         session={"day_id": current["session"]["day_id"], "session_id": session_id},
         actor=_actor_from_args(args),
         project=_project_from_args(args),
         repo=_repo_payload(repo_path, current_branch(repo_path), start_sha),
-        payload={"command": command, "files": files},
+        payload=payload,
     )
     append_line(events_path, event)
 
@@ -363,15 +423,344 @@ def cmd_end(args: argparse.Namespace) -> int:
     append_line(events_path, end_event)
     append_line(sessions_path, end_event)
 
+    # Actualizar bitácora de jornada con cierre de sesión
+    jornada_path = config.bitacora_dir(root) / f"{session['day_id']}.md"
+    from .utils import append_to_jornada_auto_section
+    
+    end_info = (
+        f"- {now_iso()} — SessionEnded\n"
+        f"- end_sha: {end_sha or 'None'}\n"
+        f"- commits: {commit_count}\n"
+        f"- archivos_tocados: {len(files)}\n"
+    )
+    append_to_jornada_auto_section(jornada_path, end_info)
+    
+    # Generar archivos de cierre y limpieza (legacy, mantener por compatibilidad)
     summary = f"{commit_count} commits, {len(files)} archivos tocados."
     cierre_path = config.bitacora_dir(root) / session["day_id"] / f"CIERRE_{session_id}.md"
     limpieza_path = (
         config.bitacora_dir(root) / session["day_id"] / f"LIMPIEZA_{session_id}.md"
     )
+    cierre_path.parent.mkdir(parents=True, exist_ok=True)
+    limpieza_path.parent.mkdir(parents=True, exist_ok=True)
     write_text(cierre_path, cierre_template(session["day_id"], session_id, summary, [], "Revisar limpieza"))
     write_text(limpieza_path, limpieza_template(session["day_id"], session_id, tasks))
+    
+    print(f"Sesion {session_id} cerrada. Bitacora jornada: {jornada_path}")
+    return 0
 
-    print(f"Sesion {session_id} cerrada. Cierre: {cierre_path}")
+
+def cmd_close_day(args: argparse.Namespace) -> int:
+    """Cierra la jornada (ritual humano). Solo registra evento DayClosed."""
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    day = day_id()
+    
+    # Verificar si ya está cerrado
+    events = list(read_json_lines(events_path))
+    day_events = [e for e in events if e.get("session", {}).get("day_id") == day]
+    already_closed = any(e.get("type") == "DayClosed" for e in day_events)
+    
+    if already_closed:
+        print(f"Jornada {day} ya está cerrada.", file=sys.stderr)
+        return 1
+    
+    # Registrar evento DayClosed
+    close_event = _build_event(
+        "DayClosed",
+        session={"day_id": day, "session_id": None},
+        actor=_actor_from_args(args),
+        project=_project_from_args(args),
+        repo=None,
+        payload={"closed_at": now_iso()},
+    )
+    
+    append_line(events_path, close_event)
+    
+    # Opcionalmente agregar marca a bitácora
+    jornada_path = config.bitacora_dir(root) / f"{day}.md"
+    if jornada_path.exists():
+        from .utils import append_to_jornada_auto_section
+        close_mark = f"\n- {now_iso()} — DayClosed (cierre humano)\n"
+        append_to_jornada_auto_section(jornada_path, close_mark)
+    
+    print(f"Jornada {day} cerrada. Evento DayClosed registrado.")
+    print("Nota: Para generar resúmenes, ejecuta 'dia summarize --mode rolling' o 'dia summarize --mode nightly'")
+    return 0
+
+
+def cmd_summarize(args: argparse.Namespace) -> int:
+    """Genera resumen regenerable (rolling o nightly)."""
+    from .summaries import extract_objective, generate_summary
+    
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    
+    # Determinar día
+    day_id_val = args.day_id if args.day_id else day_id()
+    
+    # Leer eventos del día
+    events = list(read_json_lines(events_path))
+    day_events = [e for e in events if e.get("session", {}).get("day_id") == day_id_val]
+    
+    if not day_events:
+        print(f"No hay eventos registrados para {day_id_val}.", file=sys.stderr)
+        return 1
+    
+    # Leer bitácora para extraer objetivo
+    jornada_path = config.bitacora_dir(root) / f"{day_id_val}.md"
+    objective = extract_objective(jornada_path)
+    
+    # Ruta del índice de resúmenes (summaries.ndjson)
+    summaries_path = config.index_dir(root) / "summaries.ndjson"
+    
+    # Generar resumen
+    summary_data = generate_summary(
+        root=root,
+        day_id_val=day_id_val,
+        mode=args.mode,
+        events=day_events,
+        objective=objective,
+        summaries_path=summaries_path,
+    )
+    
+    # Construir evento completo
+    event = _build_event(
+        summary_data["event_type"],
+        session=summary_data["session"],
+        actor=summary_data["actor"],
+        project=summary_data["project"],
+        repo=summary_data["repo"],
+        payload=summary_data["payload"],
+        links=summary_data["links"],
+    )
+    
+    # Guardar en índice y events
+    append_line(summaries_path, event)
+    append_line(events_path, event)
+    
+    print(f"Resumen {args.mode} generado para {day_id_val}")
+    print(f"Assessment: {summary_data['payload']['assessment']}")
+    print(f"Próximo paso: {summary_data['payload']['next_step']}")
+    if summary_data['payload'].get('blocker'):
+        print(f"Blocker: {summary_data['payload']['blocker']}")
+    print(f"Artefacto: {summary_data['payload']['links'][0]['ref']}")
+    
+    return 0
+
+
+def cmd_cap(args: argparse.Namespace) -> int:
+    """Captura texto (logs/errores) y lo guarda como artifact + evento NDJSON."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+
+    # Verificar sesión activa
+    current = current_session(events_path, repo_path=str(repo_path))
+    if not current:
+        print("No hay sesion activa para este repo.", file=sys.stderr)
+        return 1
+
+    session_id = current["session"]["session_id"]
+    day_id_val = current["session"]["day_id"]
+
+    # Leer contenido desde stdin
+    if args.stdin or not sys.stdin.isatty():
+        content = sys.stdin.read()
+    else:
+        print("Pegar contenido (Ctrl-D para finalizar):", file=sys.stderr)
+        content = sys.stdin.read()
+
+    if not content.strip():
+        print("Contenido vacio.", file=sys.stderr)
+        return 1
+
+    # Calcular hash
+    error_hash = compute_content_hash(content)
+
+    # Verificar si ya existe este error
+    events = list(read_json_lines(events_path))
+    existing_capture = None
+    for event in events:
+        if event.get("type") == "CaptureCreated":
+            if event.get("payload", {}).get("error_hash") == error_hash:
+                existing_capture = event
+                break
+
+    # Obtener estado del repo
+    branch = current_branch(repo_path)
+    head = head_sha(repo_path)
+
+    # Generar capture_id
+    capture_id = f"cap_{uuid.uuid4().hex[:12]}"
+
+    # Crear estructura de directorios
+    capture_dir = captures_dir(root) / day_id_val / session_id
+    capture_dir.mkdir(parents=True, exist_ok=True)
+
+    # Guardar artifact
+    artifact_path = capture_dir / f"{capture_id}.txt"
+    write_text(artifact_path, content)
+
+    # Guardar meta.json
+    meta = {
+        "capture_id": capture_id,
+        "kind": args.kind,
+        "title": args.title,
+        "content_hash": error_hash,
+        "repo": {
+            "path": str(repo_path),
+            "branch": branch,
+            "head_sha": head,
+        },
+        "session": {
+            "day_id": day_id_val,
+            "session_id": session_id,
+        },
+        "timestamp": now_iso(),
+    }
+    meta_path = capture_dir / f"{capture_id}.meta.json"
+    write_text(meta_path, json.dumps(meta, indent=2))
+
+    # Path relativo para el artifact
+    artifact_ref = f"artifacts/captures/{day_id_val}/{session_id}/{capture_id}.txt"
+
+    # Construir evento
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    }
+    actor = _actor_from_args(args)
+    project = _project_from_args(args)
+    repo_state = _repo_payload(repo_path, branch, head)
+
+    if existing_capture:
+        # Error repetido
+        event = _build_event(
+            "CaptureReoccurred",
+            session=session,
+            actor=actor,
+            project=project,
+            repo=repo_state,
+            payload={
+                "error_hash": error_hash,
+                "original_event_id": existing_capture.get("event_id"),
+                "artifact_ref": artifact_ref,
+                "title": args.title,
+            },
+            links=[{"kind": "artifact", "ref": artifact_ref}],
+        )
+    else:
+        # Error nuevo
+        event = _build_event(
+            "CaptureCreated",
+            session=session,
+            actor=actor,
+            project=project,
+            repo=repo_state,
+            payload={
+                "kind": args.kind,
+                "title": args.title,
+                "error_hash": error_hash,
+                "artifact_ref": artifact_ref,
+            },
+            links=[{"kind": "artifact", "ref": artifact_ref}],
+        )
+
+    append_line(events_path, event)
+
+    # Mostrar resultado
+    if existing_capture:
+        print(f"Error repetido detectado (hash: {error_hash[:8]}...)")
+    else:
+        print(f"Captura creada: {capture_id}")
+    print(f"Artifact: {artifact_path}")
+    print(f"Meta: {meta_path}")
+
+    return 0
+
+
+def cmd_fix(args: argparse.Namespace) -> int:
+    """Linkea un fix a un error capturado."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+
+    # Verificar sesión activa
+    current = current_session(events_path, repo_path=str(repo_path))
+    if not current:
+        print("No hay sesion activa para este repo.", file=sys.stderr)
+        return 1
+
+    session_id = current["session"]["session_id"]
+    day_id_val = current["session"]["day_id"]
+
+    # Buscar último error sin fix
+    if args.from_capture:
+        # Buscar por capture_id específico
+        events = list(read_json_lines(events_path))
+        target_capture = None
+        for event in events:
+            if event.get("type") == "CaptureCreated":
+                artifact_ref = event.get("payload", {}).get("artifact_ref", "")
+                if args.from_capture in artifact_ref:
+                    target_capture = event
+                    break
+        if not target_capture:
+            print(f"Capture {args.from_capture} no encontrado.", file=sys.stderr)
+            return 1
+    else:
+        # Buscar último sin fix
+        target_capture = find_last_unfixed_capture(events_path, session_id, day_id_val)
+        if not target_capture:
+            print("No hay errores sin fix en esta sesion.", file=sys.stderr)
+            return 1
+
+    # Obtener estado del repo
+    branch = current_branch(repo_path)
+    fix_sha = head_sha(repo_path)  # Puede ser None si working tree
+
+    # Construir evento FixLinked
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    }
+    actor = _actor_from_args(args)
+    project = _project_from_args(args)
+    repo_state = _repo_payload(repo_path, branch, None)
+    repo_state["end_sha"] = fix_sha
+
+    error_hash = target_capture.get("payload", {}).get("error_hash")
+    error_event_id = target_capture.get("event_id")
+
+    fix_event = _build_event(
+        "FixLinked",
+        session=session,
+        actor=actor,
+        project=project,
+        repo=repo_state,
+        payload={
+            "error_event_id": error_event_id,
+            "error_hash": error_hash,
+            "fix_sha": fix_sha,
+            "title": args.title,
+        },
+    )
+
+    append_line(events_path, fix_event)
+
+    print(f"Fix linkeado a error: {error_hash[:8]}...")
+    print(f"Error event_id: {error_event_id}")
+    if fix_sha:
+        print(f"Fix commit: {fix_sha}")
+    else:
+        print("Fix en working tree (aun sin commit)")
+        print("Ejecuta 'dia pre-feat' para sugerir commit")
+
     return 0
 
 
@@ -420,6 +809,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     end_parser.add_argument("--repo", required=False)
     end_parser.set_defaults(func=cmd_end)
+
+    close_day_parser = subparsers.add_parser(
+        "close-day", help="Cierra jornada (ritual humano)", parents=[common]
+    )
+    close_day_parser.set_defaults(func=cmd_close_day)
+
+    summarize_parser = subparsers.add_parser(
+        "summarize", help="Genera resumen regenerable", parents=[common]
+    )
+    summarize_parser.add_argument(
+        "--scope", choices=["day"], default="day", help="Alcance del resumen (v0: solo day)"
+    )
+    summarize_parser.add_argument(
+        "--mode", choices=["rolling", "nightly"], required=True, help="Modo: rolling (durante día) o nightly (final del día)"
+    )
+    summarize_parser.add_argument(
+        "--day-id", help="Día específico (default: día actual)"
+    )
+    summarize_parser.set_defaults(func=cmd_summarize)
+
+    cap_parser = subparsers.add_parser(
+        "cap", help="Captura error/log desde stdin", parents=[common]
+    )
+    cap_parser.add_argument("--kind", required=True, choices=["error", "log"], help="Tipo de captura")
+    cap_parser.add_argument("--title", required=True, help="Descripcion breve")
+    cap_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    cap_parser.add_argument("--stdin", action="store_true", help="Leer desde stdin (default: auto-detect)")
+    cap_parser.set_defaults(func=cmd_cap)
+
+    fix_parser = subparsers.add_parser(
+        "fix", help="Linkea fix a error capturado", parents=[common]
+    )
+    fix_parser.add_argument("--from", dest="from_capture", required=False, help="Capture ID especifico (default: ultimo sin fix)")
+    fix_parser.add_argument("--title", required=True, help="Descripcion del fix")
+    fix_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    fix_parser.set_defaults(func=cmd_fix)
 
     update_parser = subparsers.add_parser(
         "update", help="Reinstala la CLI en modo editable"

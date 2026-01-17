@@ -67,16 +67,33 @@ Confirmaciones y solicitudes:
 
 Luego:
 ```
+# Capturar error (cuando ocurre)
+comando_que_falla 2>&1 | dia cap --kind error --title "descripción" --data-root /ruta/al/monorepo/data --area it
+
+# Linkear fix (después de arreglar)
+dia fix --title "descripción del fix" --data-root /ruta/al/monorepo/data --area it
+
+# Checkpoint (sugiere mensaje con referencia a error si aplica)
 dia pre-feat --data-root /ruta/al/monorepo/data --area it
 dia end --data-root /ruta/al/monorepo/data --area it
+dia close-day --data-root /ruta/al/monorepo/data --area it
 ```
 
 ## Datos generados
 - `data/index/events.ndjson` (append-only)
-- `data/bitacora/YYYY-MM-DD/Sxx.md`
-- `data/bitacora/YYYY-MM-DD/CIERRE_Sxx.md`
-- `data/bitacora/YYYY-MM-DD/LIMPIEZA_Sxx.md`
+- `data/index/summaries.ndjson` (append-only, resúmenes rolling/nightly)
+- `data/bitacora/YYYY-MM-DD.md` (archivo único por jornada, secciones manuales + automáticas)
+- `data/artifacts/summaries/YYYY-MM-DD/` (resúmenes regenerables)
 - `data/artifacts/*` (diffs, logs)
+- `data/artifacts/captures/YYYY-MM-DD/Sxx/` (errores/logs capturados)
+
+## Sesiones múltiples
+
+`/dia` permite **N sesiones por día** sin restricciones. Cada sesión se identifica con ID secuencial (S01, S02, S03, etc.).
+
+- `dia close-day` marca el día como cerrado pero **no bloquea nuevas sesiones**
+- Sesiones iniciadas después del cierre generan evento `SessionStartedAfterDayClosed`
+- Ver [`docs/guides/sesiones-multiples.md`](docs/guides/sesiones-multiples.md) para más detalles
 
 ## Convención de commits
 
@@ -89,4 +106,13 @@ dia end --data-root /ruta/al/monorepo/data --area it
 **Recordatorios automáticos**: `dia start` genera `.cursorrules` en el repo activo para que Cursor recuerde el workflow.
 
 ## Manual
-Ver `docs/manual/TUTORIAL_INTRO_V0_1.md`.
+- **Tutorial completo**: `docs/manual/TUTORIAL_INTRO_V0_1.md`
+- **Guías de comandos**: `docs/guides/`
+  - [`dia start`](docs/guides/dia-start.md)
+  - [`dia pre-feat`](docs/guides/dia-pre-feat.md)
+  - [`dia end`](docs/guides/dia-end.md)
+  - [`dia close-day`](docs/guides/dia-close-day.md)
+  - [`dia summarize`](docs/guides/dia-summarize.md)
+  - [`dia cap`](docs/guides/dia-cap.md)
+  - [`dia fix`](docs/guides/dia-fix.md)
+  - [Sesiones múltiples](docs/guides/sesiones-multiples.md)

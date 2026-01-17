@@ -1,0 +1,36 @@
+{
+  "day_id": "2026-01-17",
+  "mode": "rolling",
+  "window_start": "2026-01-17T09:31:54.506209-03:00",
+  "window_end": "2026-01-17T19:39:43.625276-03:00",
+  "summary_version": "rolling_20260117T193943",
+  "assessment": "ON_TRACK",
+  "next_step": "Continuar con siguiente tarea o cerrar sesión actual",
+  "blocker": null,
+  "risks": [],
+  "delta": {
+    "new_events": [
+      "evt_f199251ce0504b569ba7c1f79fa407f0",
+      "evt_416a2cc219a847fa9b1077dcfbe0ced7",
+      "evt_3bc193279ea84bf9b9984345ee323abd",
+      "evt_1768654462.596593",
+      "evt_1768654462.596605_1",
+      "evt_1768654462.596608_commit_0",
+      "evt_1768654462.596612_commit_1",
+      "evt_1768654462.596615_end",
+      "evt_ed75b82fb9484f9ca783e4a13231d966",
+      "evt_2db55cac1f504653b30212ef423a7d4c",
+      "evt_8d53a563e41949f28f14e98660759ddf"
+    ],
+    "new_commits": 1,
+    "new_errors": 0,
+    "assessment_changed": false
+  },
+  "objective": "No especificado",
+  "links": [
+    {
+      "kind": "artifact",
+      "ref": "artifacts/summaries/2026-01-17/rolling_20260117T193943.md"
+    }
+  ]
+}

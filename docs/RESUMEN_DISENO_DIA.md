@@ -41,7 +41,8 @@ SÍ es:
 ### Tres funciones principales
 
 1. **Registro**
-   - bitácora por sesión
+   - bitácora por jornada (archivo único por día)
+   - secciones manuales (editables) + automáticas (append-only)
    - eventos inmutables
 
 2. **Auditoría**
@@ -50,7 +51,8 @@ SÍ es:
    - detección de archivos “basura”
 
 3. **Cierre útil**
-   - resumen del día
+   - resumen del día (generado automáticamente)
+   - análisis comparativo vs objetivo
    - tareas concretas de limpieza
    - recomendaciones de commits y docs
 
@@ -81,8 +83,12 @@ Crea sesión y captura baseline del repo:
 - recuento de cambios
 - (opcional) archivos tocados recientemente
 
+**Múltiples sesiones por día**: `/dia` permite N sesiones por día sin restricciones. Los IDs se generan secuencialmente: S01, S02, S03, etc.
+
+**Sesiones después de cierre**: Si el día ya fue cerrado con `dia close-day`, se genera evento `SessionStartedAfterDayClosed` en lugar de `SessionStarted`, pero la sesión se permite normalmente.
+
 Se guarda en:
-- `bitacora/YYYY-MM-DD/S01.md`
+- `bitacora/YYYY-MM-DD.md` (archivo único por jornada, sección automática)
 - `index/sessions.ndjson`
 - `artifacts/S01_repo_baseline.txt`
 
@@ -103,26 +109,87 @@ Captura estado final y compara contra baseline:
   - (opcional) `--numstat`
 
 Genera automáticamente:
-- **CIERRE_Sxx.md** (análisis humano)
+- Actualización de bitácora de jornada (sección automática)
+- **CIERRE_Sxx.md** (legacy, mantenido por compatibilidad)
 - **LIMPIEZA_Sxx.md** (acciones concretas)
-- checklist “antes del próximo deploy”
+- checklist "antes del próximo deploy"
 
 ---
 
-## Archivos generados al cierre
+### `dia close-day`
+Cierra la jornada (ritual humano):
 
-### A) `CIERRE_Sxx.md`
-- qué cambió realmente
-- qué rompió el orden
-- qué quedó riesgoso
-- próxima acción clara
+- registra evento `DayClosed` en `events.ndjson`
+- opcionalmente marca bitácora con cierre humano
+- **NO genera resúmenes** (los resúmenes se generan con `dia summarize`)
+- **NO bloquea nuevas sesiones**: se pueden iniciar sesiones después del cierre
 
-### B) `LIMPIEZA_Sxx.md`
-Lista accionable, por ejemplo:
-- mover `docs/scratch/*.md` → `docs/_scratch/`
-- consolidar `15_test.py` → `tests/test_<feature>.py`
-- dividir commits grandes en 2–3 commits normados
-- crear/actualizar `docs/spec/<tema>.md`
+Este comando es un ritual que marca "hasta mañana", no un generador de análisis ni un bloqueador de trabajo.
+
+**Comportamiento**: Si se ejecuta `dia start` después de `dia close-day`, se genera evento `SessionStartedAfterDayClosed` para registrar que la sesión comenzó tras el cierre, pero la sesión se permite normalmente.
+
+---
+
+### `dia summarize`
+Genera resúmenes regenerables (vistas derivadas):
+
+- `--mode rolling`: resumen durante el día (puede ejecutarse múltiples veces)
+- `--mode nightly`: resumen al final del día (típicamente por cron)
+- `--scope day`: alcance del resumen (v0: solo día)
+
+Comportamiento:
+- lee eventos del día/ventana
+- extrae objetivo de bitácora (sección manual)
+- analiza eventos con heurísticas (BLOCKED/OFF_TRACK/ON_TRACK)
+- calcula delta vs último resumen rolling
+- genera artefactos versionados (`artifacts/summaries/YYYY-MM-DD/rolling_<ts>.md`)
+- registra evento `RollingSummaryGenerated` o `DailySummaryGenerated`
+- agrega entrada a índice `summaries.ndjson` (append-only)
+
+**Regla central**: Eventos/bitácora = fuente append-only. Resúmenes = vistas derivadas regenerables.
+
+---
+
+## Archivos generados
+
+### Bitácora de jornada (`bitacora/YYYY-MM-DD.md`)
+
+Estructura:
+- **Sección 1**: Intención del día (manual, editable)
+- **Sección 2**: Notas humanas (manual, editable)
+- **Sección 3**: Registro automático (append-only, NO EDITAR)
+
+Regla dura: `/dia` solo puede escribir a partir de la sección 3.
+
+**Nota**: Los resúmenes ya no se agregan a la bitácora. Se generan como artefactos separados.
+
+### Resúmenes regenerables (`artifacts/summaries/YYYY-MM-DD/`)
+
+Generados por `dia summarize`:
+- `rolling_<timestamp>.md` y `.json`: resúmenes durante el día
+- `nightly_<timestamp>.md` y `.json`: resúmenes al final del día
+
+Cada resumen incluye:
+- assessment (ON_TRACK/OFF_TRACK/BLOCKED)
+- next_step (próxima acción concreta)
+- blocker (si existe)
+- risks (lista de riesgos)
+- delta (cambios desde último resumen rolling)
+- objective (extraído de bitácora)
+
+**Regla**: Resúmenes son vistas derivadas regenerables. Pueden ejecutarse múltiples veces sin reescribir anteriores.
+
+### Índice de resúmenes (`index/summaries.ndjson`)
+
+Índice append-only de todos los resúmenes generados:
+- múltiples resúmenes por día (rolling + nightly)
+- cada línea = un resumen generado
+- formato: evento completo con tipo `RollingSummaryGenerated` o `DailySummaryGenerated`
+
+### Archivos legacy (mantenidos por compatibilidad)
+
+- `CIERRE_Sxx.md`: análisis de sesión
+- `LIMPIEZA_Sxx.md`: tareas concretas de limpieza
 
 Regla: **no opiniones, solo tareas**.
 
@@ -248,12 +315,16 @@ Ver especificación: `docs/SPEC_FORK_MIN_DIA.md`.
 
 ---
 
-## Alcance inmediato v0.1
+## Alcance v0.1 (actualizado)
 
-Incluye solo:
-- `dia start`
-- `dia note`
-- `dia end`
-- generación de `Sxx.md` y `LIMPIEZA_Sxx.md`
+Incluye:
+- `dia start` (inicia sesión, crea bitácora de jornada)
+- `dia pre-feat` (sugiere commit)
+- `dia end` (cierra sesión, actualiza bitácora)
+- `dia close-day` (cierra jornada, ritual humano)
+- `dia summarize` (genera resúmenes regenerables rolling/nightly)
+- generación de bitácora única por jornada
+- resúmenes regenerables como vistas derivadas
+- separación clara: fuente (eventos) vs vistas (resúmenes)
 
-Todo lo demás queda fuera **hasta tener datos limpios**.
+Principio rector: **Los eventos son materia prima (append-only). Los resúmenes son vistas derivadas regenerables.**

@@ -4,11 +4,13 @@ setup.cfg
 setup.py
 ./dia_cli/__init__.py
 ./dia_cli/config.py
+./dia_cli/cursor_reminder.py
 ./dia_cli/git_ops.py
 ./dia_cli/main.py
 ./dia_cli/ndjson.py
 ./dia_cli/rules.py
 ./dia_cli/sessions.py
+./dia_cli/summaries.py
 ./dia_cli/templates.py
 ./dia_cli/utils.py
 dia_cli/__init__.py

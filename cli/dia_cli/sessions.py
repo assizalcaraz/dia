@@ -7,10 +7,13 @@ from .utils import read_json_lines
 
 
 def next_session_id(day_id: str, sessions_path: Path) -> str:
+    """Genera el siguiente ID de sesión para un día, contando todas las sesiones iniciadas."""
     counter = 0
     for entry in read_json_lines(sessions_path):
         session = entry.get("session", {})
-        if session.get("day_id") == day_id:
+        event_type = entry.get("type")
+        # Contar tanto SessionStarted como SessionStartedAfterDayClosed
+        if session.get("day_id") == day_id and event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
             counter += 1
     return f"S{counter + 1:02d}"
 
@@ -20,13 +23,15 @@ def current_session(
 ) -> Optional[dict[str, Any]]:
     sessions: dict[str, dict[str, Any]] = {}
     for event in read_json_lines(events_path):
-        if event.get("type") == "SessionStarted":
+        event_type = event.get("type")
+        # Manejar tanto SessionStarted como SessionStartedAfterDayClosed
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
             session_id = event["session"]["session_id"]
             sessions[session_id] = {
                 "started": event,
                 "ended": None,
             }
-        if event.get("type") == "SessionEnded":
+        if event_type == "SessionEnded":
             session_id = event["session"]["session_id"]
             if session_id in sessions:
                 sessions[session_id]["ended"] = event

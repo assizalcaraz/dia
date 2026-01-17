@@ -103,6 +103,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-md);
+    height: 100%;
+    overflow: hidden;
   }
 
   .viewer-header {
@@ -110,6 +112,7 @@
     align-items: center;
     gap: var(--spacing-md);
     margin-bottom: var(--spacing-md);
+    flex-shrink: 0;
   }
 
   .label {
@@ -145,7 +148,8 @@
     border-radius: var(--radius-md);
     padding: var(--spacing-lg);
     background: var(--color-bg);
-    max-height: 70vh;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
   }
 
