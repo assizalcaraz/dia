@@ -867,15 +867,37 @@ def build_parser() -> argparse.ArgumentParser:
     e_parser = subparsers.add_parser(
         "E", help="Captura error con título automático (alias de 'cap --kind error --auto')", parents=[common]
     )
+    e_parser.add_argument("error_message", nargs="?", help="Mensaje de error (opcional, también se puede pasar por stdin)")
     e_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
     e_parser.add_argument("--stdin", action="store_true", help="Leer desde stdin (default: auto-detect)")
     
     def cmd_e(args):
         """Wrapper para cmd_cap con --kind error --auto"""
-        args.kind = 'error'
-        args.title = None
-        args.auto = True
-        return cmd_cap(args)
+        # Si se proporciona mensaje como argumento, inyectarlo en stdin
+        if hasattr(args, 'error_message') and args.error_message:
+            import io
+            import sys
+            # Guardar stdin original si es necesario
+            original_stdin = sys.stdin
+            try:
+                # Crear un StringIO con el mensaje
+                sys.stdin = io.StringIO(args.error_message)
+                args.stdin = True
+                
+                args.kind = 'error'
+                args.title = None
+                args.auto = True
+                result = cmd_cap(args)
+            finally:
+                # Restaurar stdin
+                sys.stdin = original_stdin
+            return result
+        else:
+            # Comportamiento normal: leer desde stdin
+            args.kind = 'error'
+            args.title = None
+            args.auto = True
+            return cmd_cap(args)
     
     e_parser.set_defaults(func=cmd_e)
 
