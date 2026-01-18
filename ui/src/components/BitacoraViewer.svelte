@@ -9,7 +9,9 @@
   let selectedDayId = initialDayId || new Date().toISOString().split("T")[0];
   let content = "";
   let loading = false;
+  let loadingDays = false;
   let error = null;
+  let daysLoaded = false;
 
   const fetchJson = async (path) => {
     // Asegurar que la ruta empiece con / y apiBase no termine con /
@@ -25,6 +27,7 @@
   };
 
   const loadAvailableDays = async () => {
+    loadingDays = true;
     try {
       const sessionsRes = await fetchJson("/sessions/");
       const days = new Set();
@@ -34,14 +37,20 @@
         }
       });
       availableDays = Array.from(days).sort().reverse();
+      daysLoaded = true;
     } catch (err) {
       console.error("Error cargando días disponibles:", err);
       // No mostrar error aquí, solo loguear
+      daysLoaded = true; // Marcar como cargado incluso si falla para no bloquear
+    } finally {
+      loadingDays = false;
     }
   };
 
   const loadBitacora = async () => {
     if (!selectedDayId) return;
+    // Esperar a que los días se carguen antes de intentar cargar la bitácora
+    if (!daysLoaded) return;
 
     loading = true;
     error = null;
@@ -49,15 +58,22 @@
       const data = await fetchJson(`/jornada/${selectedDayId}/`);
       content = data.content || "";
     } catch (err) {
-      console.error("Error cargando bitácora:", err);
-      error = `Error al cargar bitácora: ${err.message}`;
-      content = "";
+      // Manejar 404 como caso válido (no hay bitácora para ese día)
+      if (err.message.includes("404")) {
+        console.log(`No hay bitácora disponible para ${selectedDayId}`);
+        error = null; // No mostrar error para 404, mostrar estado vacío
+        content = "";
+      } else {
+        console.error("Error cargando bitácora:", err);
+        error = `Error al cargar bitácora: ${err.message}`;
+        content = "";
+      }
     } finally {
       loading = false;
     }
   };
 
-  $: if (selectedDayId) {
+  $: if (selectedDayId && daysLoaded) {
     loadBitacora();
   }
 

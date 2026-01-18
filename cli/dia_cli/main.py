@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -588,15 +589,21 @@ def cmd_cap(args: argparse.Namespace) -> int:
     # Generar título automáticamente si se usa --auto o si no se proporciona --title
     title = args.title
     if args.auto or (not title and args.kind == "error"):
-        print("Analizando error con LLM...", file=sys.stderr)
+        # Verificar si hay LLM disponible
+        has_llm = os.getenv("OPENAI_API_KEY") is not None
+        if has_llm:
+            print("Generando título con LLM...", file=sys.stderr)
         generated_title = analyze_error_with_llm(content, args.kind)
         if generated_title:
             title = generated_title
-            print(f"Título generado: {title}", file=sys.stderr)
+            if has_llm:
+                print(f"Título generado: {title}", file=sys.stderr)
+            else:
+                print(f"Título generado: {title}", file=sys.stderr)
         else:
             # Fallback: usar análisis simple
             title = _analyze_error_simple(content)
-            print(f"Título generado (simple): {title}", file=sys.stderr)
+            print(f"Título generado: {title}", file=sys.stderr)
     
     if not title:
         print("Error: se requiere --title o usar --auto", file=sys.stderr)
@@ -605,14 +612,28 @@ def cmd_cap(args: argparse.Namespace) -> int:
     # Calcular hash
     error_hash = compute_content_hash(content)
 
-    # Verificar si ya existe este error
+    # Verificar si ya existe este error y buscar errores similares
     events = list(read_json_lines(events_path))
     existing_capture = None
+    similar_errors = []
+    
     for event in events:
         if event.get("type") == "CaptureCreated":
-            if event.get("payload", {}).get("error_hash") == error_hash:
+            event_hash = event.get("payload", {}).get("error_hash")
+            if event_hash == error_hash:
                 existing_capture = event
-                break
+            elif event_hash:
+                # Buscar errores similares (mismo título o palabras clave)
+                event_title = event.get("payload", {}).get("title", "").lower()
+                current_title_lower = (title or "").lower()
+                # Si comparten palabras clave importantes
+                if event_title and current_title_lower:
+                    event_words = set(event_title.split())
+                    current_words = set(current_title_lower.split())
+                    common_words = event_words.intersection(current_words)
+                    # Si comparten al menos 2 palabras significativas
+                    if len(common_words) >= 2:
+                        similar_errors.append(event)
 
     # Obtener estado del repo
     branch = current_branch(repo_path)
@@ -698,11 +719,43 @@ def cmd_cap(args: argparse.Namespace) -> int:
 
     # Mostrar resultado
     if existing_capture:
-        print(f"Error repetido detectado (hash: {error_hash[:8]}...)")
+        print(f"⚠️  Error repetido detectado (hash: {error_hash[:8]}...)")
+        print(f"   Original: {existing_capture.get('ts', 'N/A')} - {existing_capture.get('payload', {}).get('title', 'Sin título')}")
+        print(f"   Sesión original: {existing_capture.get('session', {}).get('session_id', 'N/A')}")
+        
+        # Verificar si el error original tiene fix
+        original_event_id = existing_capture.get("event_id")
+        has_fix = any(
+            e.get("type") == "FixLinked" 
+            and e.get("payload", {}).get("error_event_id") == original_event_id
+            for e in events
+        )
+        
+        if has_fix:
+            print(f"   ℹ️  Este error ya fue resuelto anteriormente")
+        else:
+            print(f"   ⚠️  Este error aún no tiene fix asociado")
+            print(f"   💡 Sugerencia: Revisa el fix anterior o aplica uno nuevo con 'dia fix'")
     else:
-        print(f"Captura creada: {capture_id}")
-    print(f"Artifact: {artifact_path}")
-    print(f"Meta: {meta_path}")
+        print(f"✅ Captura creada: {capture_id}")
+        print(f"   Artifact: {artifact_path}")
+        print(f"   Meta: {meta_path}")
+        
+        # Mostrar errores similares si existen
+        if similar_errors:
+            print(f"\n   📋 Errores similares encontrados ({len(similar_errors)}):")
+            for similar in similar_errors[:3]:  # Mostrar máximo 3
+                similar_title = similar.get("payload", {}).get("title", "Sin título")
+                similar_session = similar.get("session", {}).get("session_id", "N/A")
+                similar_ts = similar.get("ts", "N/A")
+                print(f"      - {similar_title} (Sesión {similar_session}, {similar_ts[:10]})")
+        
+        # Sugerir acciones siguientes según el flujo
+        print(f"\n   💡 Próximos pasos:")
+        print(f"      1. Revisar artifact: {artifact_path}")
+        print(f"      2. Analizar y aplicar fix")
+        print(f"      3. Linkear fix: dia fix --title \"descripción del fix\" --data-root {root} --area {args.area}")
+        print(f"      4. Commit: dia pre-feat --data-root {root} --area {args.area}")
 
     return 0
 
@@ -771,7 +824,7 @@ def cmd_fix(args: argparse.Namespace) -> int:
             "error_event_id": error_event_id,
             "error_hash": error_hash,
             "fix_sha": fix_sha,
-            "title": title,
+            "title": args.title,
         },
     )
 
