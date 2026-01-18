@@ -173,6 +173,31 @@
     boardOpen = false;
   }
 
+  function copyErrorContent(error) {
+    const lines = [
+      `Error: ${error.title || "Sin título"}`,
+      `Sesión: ${error.session?.session_id || "N/A"}`,
+      `Fecha: ${error.ts ? new Date(error.ts).toLocaleString() : "N/A"}`,
+    ];
+    
+    if (error.artifact_ref) {
+      lines.push(`Artifact: ${error.artifact_ref}`);
+    }
+    
+    if (error.error_hash) {
+      lines.push(`Hash: ${error.error_hash}`);
+    }
+    
+    const text = lines.join('\n');
+    
+    navigator.clipboard.writeText(text).then(() => {
+      // Feedback visual temporal (opcional)
+      console.log('Contenido copiado al portapapeles');
+    }).catch(err => {
+      console.error('Error al copiar:', err);
+    });
+  }
+
   function handleErrorTooltipPosition(event, tooltipElement) {
     if (!tooltipElement) return;
     
@@ -514,18 +539,48 @@
                     const button = e.currentTarget;
                     const tooltip = button.querySelector('.error-content');
                     if (tooltip) {
+                      // Cancelar cualquier timeout pendiente
+                      const existingTimeout = tooltip.dataset.timeoutId;
+                      if (existingTimeout) {
+                        clearTimeout(parseInt(existingTimeout));
+                        delete tooltip.dataset.timeoutId;
+                      }
+                      
                       handleErrorTooltipPosition(e, tooltip);
+                      // Hacer tooltip interactivo al hover
+                      tooltip.style.pointerEvents = 'auto';
+                      tooltip.style.opacity = '1';
+                      tooltip.style.visibility = 'visible';
                     }
                   }}
                   on:mouseleave={(e) => {
                     const button = e.currentTarget;
                     const tooltip = button.querySelector('.error-content');
                     if (tooltip) {
-                      setTimeout(() => {
-                        tooltip.style.opacity = '0';
-                        tooltip.style.visibility = 'hidden';
-                        tooltip.style.pointerEvents = 'none';
-                      }, 150);
+                      // Delay antes de cerrar (500ms)
+                      const timeout = setTimeout(() => {
+                        // Verificar que el mouse no esté sobre el tooltip
+                        const tooltipRect = tooltip.getBoundingClientRect();
+                        const mouseX = e.clientX;
+                        const mouseY = e.clientY;
+                        const isOverTooltip = (
+                          mouseX >= tooltipRect.left - 10 &&
+                          mouseX <= tooltipRect.right + 10 &&
+                          mouseY >= tooltipRect.top - 10 &&
+                          mouseY <= tooltipRect.bottom + 10
+                        );
+                        
+                        if (!isOverTooltip) {
+                          // Fade out
+                          tooltip.style.opacity = '0';
+                          setTimeout(() => {
+                            tooltip.style.visibility = 'hidden';
+                            tooltip.style.pointerEvents = 'none';
+                          }, 200); // Duración del fade out
+                        }
+                      }, 500); // Delay antes de iniciar cierre
+                      
+                      tooltip.dataset.timeoutId = timeout.toString();
                     }
                   }}
                   type="button"
@@ -533,8 +588,46 @@
                   <span class="error-tab-title">{errorTitle}</span>
                   
                   <!-- Tooltip con detalles -->
-                  <div class="error-content">
-                    <h4 class="error-content-title">{errorTitle}</h4>
+                  <div 
+                    class="error-content"
+                    on:mouseenter={(e) => {
+                      const tooltip = e.currentTarget;
+                      // Cancelar cualquier timeout pendiente
+                      const existingTimeout = tooltip.dataset.timeoutId;
+                      if (existingTimeout) {
+                        clearTimeout(parseInt(existingTimeout));
+                        delete tooltip.dataset.timeoutId;
+                      }
+                      
+                      tooltip.style.opacity = '1';
+                      tooltip.style.visibility = 'visible';
+                      tooltip.style.pointerEvents = 'auto';
+                    }}
+                    on:mouseleave={(e) => {
+                      const tooltip = e.currentTarget;
+                      // Delay antes de cerrar (500ms) con fade out
+                      const timeout = setTimeout(() => {
+                        tooltip.style.opacity = '0';
+                        setTimeout(() => {
+                          tooltip.style.visibility = 'hidden';
+                          tooltip.style.pointerEvents = 'none';
+                        }, 200); // Duración del fade out
+                      }, 500);
+                      
+                      tooltip.dataset.timeoutId = timeout.toString();
+                    }}
+                  >
+                    <div class="error-content-header">
+                      <h4 class="error-content-title">{errorTitle}</h4>
+                      <button
+                        class="error-copy-btn"
+                        type="button"
+                        on:click={() => copyErrorContent(error)}
+                        title="Copiar información del error"
+                      >
+                        📋
+                      </button>
+                    </div>
                     <div class="error-content-meta">
                       <div class="error-meta-item">
                         <span class="error-meta-label">Sesión:</span>
@@ -548,6 +641,12 @@
                         <div class="error-meta-item">
                           <span class="error-meta-label">Artifact:</span>
                           <span class="error-meta-value mono">{error.artifact_ref}</span>
+                        </div>
+                      {/if}
+                      {#if error.error_hash}
+                        <div class="error-meta-item">
+                          <span class="error-meta-label">Hash:</span>
+                          <span class="error-meta-value mono" style="font-size: 10px;">{error.error_hash.substring(0, 16)}...</span>
                         </div>
                       {/if}
                     </div>

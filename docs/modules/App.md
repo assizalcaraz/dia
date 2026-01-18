@@ -26,7 +26,10 @@ Panel derecho que muestra:
 - **Sesiones de hoy**: Lista de sesiones del día con duración
 - **Checklist diario**: Lista de verificación
 - **Último resumen rolling**: Estado actual y próximo paso
-- **Errores abiertos**: Lista de errores sin fix
+- **Errores abiertos**: Lista de errores sin fix con tooltips interactivos
+  - Tooltips con información detallada del error
+  - Botón de copiar (📋) para copiar información del error al portapapeles
+  - Tooltip permanece visible con delay y fade out suave
 
 ---
 
@@ -41,6 +44,11 @@ Panel derecho que muestra:
 4. **Visualización de métricas**: Muestra contadores de sesiones, resúmenes y errores
 5. **Timeline de veredictos**: Muestra evolución de assessments rolling con indicadores de cambio
 6. **Preservación de estado**: Mantiene posición de scroll y tooltips abiertos durante actualizaciones
+7. **Tooltips de errores interactivos**: 
+   - Muestra información detallada al hacer hover sobre errores
+   - Botón de copiar para copiar información al portapapeles
+   - Delay de 500ms antes de cerrar con fade out suave de 200ms
+   - Permite interacción completa (hover y click) sin que se cierre prematuramente
 
 ---
 
@@ -91,6 +99,8 @@ Panel derecho que muestra:
 - `load()`: Carga inicial completa de todos los datos (con indicador de carga)
 - `loadIncremental()`: Actualización silenciosa que preserva estado de UI (sin parpadeo)
 - `formatElapsed(minutes)`: Formatea duración en minutos a formato legible
+- `copyErrorContent(error)`: Copia información del error al portapapeles (título, sesión, fecha, artifact, hash)
+- `handleErrorTooltipPosition(event, tooltipElement)`: Calcula y posiciona tooltip de error de forma inteligente
 
 ---
 

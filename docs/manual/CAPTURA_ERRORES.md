@@ -291,7 +291,9 @@ Presencia de `CaptureReoccurred` con `original_event_id` → error repetido
 
 ### ¿Hay errores sin fix?
 
-Buscar `CaptureCreated` sin `FixLinked` asociado (mismo `error_hash` o `error_event_id`)
+Buscar `CaptureCreated` sin `FixLinked` asociado usando `error_event_id` (asociación específica por evento, no por hash).
+
+**Nota importante**: El sistema usa `error_event_id` para asociar fixes a errores específicos, permitiendo que errores con el mismo `error_hash` (errores repetidos) tengan fixes independientes. Esto mejora la precisión de la trazabilidad.
 
 ---
 
@@ -333,6 +335,12 @@ curl http://localhost:8000/api/captures/recent/?limit=10
 ### `/api/captures/errors/open/`
 
 Retorna lista de errores sin fix (último CaptureCreated sin FixLinked por sesión).
+
+**Lógica de detección**:
+- Usa `error_event_id` para asociar `FixLinked` a `CaptureCreated` específicos
+- Un error está fijado solo si tiene un `FixLinked` con su `error_event_id` específico
+- Esto permite que errores con el mismo `error_hash` (errores repetidos) tengan fixes independientes
+- Solo muestra el error más reciente por sesión
 
 **Ejemplo**:
 ```bash
@@ -403,26 +411,42 @@ comando_que_falla 2>&1 | dia cap --kind error --title "descripción" --data-root
 
 - Revisar artifact: `data/artifacts/captures/YYYY-MM-DD/Sxx/cap_<id>.txt`
 - Analizar el error
-- Implementar fix
+- **Implementar fix en el código** (editar archivos, corregir el problema)
 
-### 3. Linkear fix
+### 3. Linkear fix al error
+
+**Después de aplicar el fix**, linkearlo al error capturado:
 
 ```bash
+# Si es el último error sin fix
 dia fix --title "descripción del fix" --data-root /ruta/data --area it
+
+# Si hay múltiples errores y quieres linkear uno específico
+dia fix --from cap_<id> --title "descripción del fix" --data-root /ruta/data --area it
 ```
 
-### 4. Commit con referencia
+**Importante**: 
+- Linkear el fix **después** de haber corregido el código
+- Si el error ya fue corregido en un commit anterior, puedes linkearlo usando `--from` con el `capture_id`
+- El `capture_id` se encuentra en el artifact: `cap_<id>.txt`
+
+### 4. Checkpoint y commit
 
 ```bash
+# Checkpoint (detecta automáticamente fixes linkeados)
 dia pre-feat --data-root /ruta/data --area it
-# Copiar y ejecutar comando sugerido (incluirá referencia a error)
+
+# Copiar y ejecutar comando sugerido
+# Si hay un error con fix linkeado, el mensaje incluirá referencia
+git-commit-cursor -m "🦾 fix: descripción del fix [#sesion Sxx]"
 ```
 
 ### 5. Verificar trazabilidad
 
-- Error capturado → `CaptureCreated`
-- Fix linkeado → `FixLinked`
-- Commit sugerido → `CommitSuggestionIssued` (con `error_ref`)
+- Error capturado → `CaptureCreated` (con `error_hash` y `artifact_ref`)
+- Fix linkeado → `FixLinked` (con `error_event_id` y `fix_sha`)
+- Commit sugerido → `CommitSuggestionIssued` (con `error_ref` si aplica)
+- El error desaparece de "errores abiertos" una vez linkeado el fix
 
 ---
 
@@ -462,16 +486,43 @@ echo "Error: connection timeout" | dia cap --kind error --title "timeout" --data
 ```bash
 # Error 1
 error1 2>&1 | dia cap --kind error --title "error 1" --data-root /ruta/data --area it
+# → Captura creada: cap_a1b2c3d4e5f6
 
 # Error 2
 error2 2>&1 | dia cap --kind error --title "error 2" --data-root /ruta/data --area it
+# → Captura creada: cap_f6e5d4c3b2a1
 
-# Arreglar error 1
-dia fix --title "fix error 1" --data-root /ruta/data --area it
-# → Linkea al último (error 2)
+# Arreglar error 1 en el código
+# ... editar archivos ...
 
-# Arreglar error 2 (especificar capture_id)
-dia fix --from cap_<id_error2> --title "fix error 2" --data-root /ruta/data --area it
+# Linkear fix al error 1 (usar --from con el capture_id)
+dia fix --from cap_a1b2c3d4e5f6 --title "fix error 1" --data-root /ruta/data --area it
+
+# Arreglar error 2 en el código
+# ... editar archivos ...
+
+# Linkear fix al error 2
+dia fix --from cap_f6e5d4c3b2a1 --title "fix error 2" --data-root /ruta/data --area it
+
+# Checkpoint y commit
+dia pre-feat --data-root /ruta/data --area it
+# Ejecutar comando sugerido
+```
+
+### Caso 4: Error ya corregido (linkear fix retroactivo)
+
+Si encuentras un error que ya fue corregido en un commit anterior:
+
+```bash
+# 1. Capturar el error (si no está capturado)
+dia E "Error ya corregido" --data-root /ruta/data --area it
+# → Anotar el capture_id: cap_<id>
+
+# 2. Linkear el fix al error usando el commit que lo corrigió
+dia fix --from cap_<id> --title "Fix aplicado en commit anterior" --data-root /ruta/data --area it
+# → Esto linkea el commit actual (HEAD) al error
+
+# Nota: Si el fix está en un commit anterior, puedes hacer checkout a ese commit antes de linkear
 ```
 
 ---
@@ -515,6 +566,24 @@ Sí, usando `--from <capture_id>` con el ID específico del error.
 
 ---
 
+## Mejoras Recientes
+
+### v0.1+ (2026-01-17): Precisión en detección de errores fijados
+
+**Problema anterior**: El sistema usaba solo `error_hash` para determinar si un error estaba fijado, lo que causaba que todos los `CaptureCreated` con el mismo hash se marcaran como fijados cuando solo uno tenía un `FixLinked` asociado.
+
+**Solución implementada**: 
+- La lógica ahora usa `error_event_id` para asociar `FixLinked` a `CaptureCreated` específicos
+- Un error está fijado solo si tiene un `FixLinked` con su `error_event_id` específico
+- Esto permite que errores con el mismo `error_hash` (errores repetidos) tengan fixes independientes
+- Mejora la precisión de la trazabilidad y evita falsos positivos en errores abiertos
+
+**Archivos modificados**:
+- `server/api/views.py`: Función `errors_open()` actualizada
+- `cli/dia_cli/utils.py`: Función `find_last_unfixed_capture()` actualizada
+
+---
+
 ## Próximos Pasos
 
 - Integración con `close-day`: incluir métricas de errores capturados vs resueltos
@@ -523,5 +592,5 @@ Sí, usando `--from <capture_id>` con el ID específico del error.
 
 ---
 
-**Última actualización**: 2026-01-18  
+**Última actualización**: 2026-01-17  
 **Versión del sistema**: v0.1+

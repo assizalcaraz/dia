@@ -343,21 +343,22 @@ def errors_open(request):
                     key = f"{session_id}:{error_hash}"
                     captures[key] = event
     
-    # Recopilar todos los FixLinked
-    fixed_hashes: set[str] = set()
+    # Recopilar todos los FixLinked usando error_event_id (más preciso que error_hash)
+    fixed_event_ids: set[str] = set()
     for event in events:
         if event.get("type") == "FixLinked":
-            error_hash = event.get("payload", {}).get("error_hash")
-            if error_hash:
-                fixed_hashes.add(error_hash)
+            error_event_id = event.get("payload", {}).get("error_event_id")
+            if error_event_id:
+                fixed_event_ids.add(error_event_id)
     
     # Encontrar errores sin fix (último por sesión)
     open_errors: dict[str, dict[str, Any]] = {}
     for key, capture in captures.items():
-        error_hash = capture.get("payload", {}).get("error_hash")
+        capture_event_id = capture.get("event_id")
         session_id = capture.get("session", {}).get("session_id")
         
-        if error_hash not in fixed_hashes:
+        # Un error está fijado si tiene un FixLinked asociado a su event_id específico
+        if capture_event_id not in fixed_event_ids:
             # Si ya hay un error abierto para esta sesión, mantener el más reciente
             if session_id not in open_errors:
                 open_errors[session_id] = capture

@@ -172,10 +172,12 @@ Busca el último `CaptureCreated` sin `FixLinked` asociado.
 **Comportamiento**:
 1. Lee todos los eventos del archivo.
 2. Filtra por día y sesión si se especifican.
-3. Recopila todos los `CaptureCreated` con sus hashes.
-4. Recopila todos los `FixLinked` para saber cuáles están resueltos.
-5. Encuentra el último `CaptureCreated` sin fix asociado.
+3. Recopila todos los `CaptureCreated`.
+4. Recopila todos los `FixLinked` usando `error_event_id` (más preciso que `error_hash`).
+5. Encuentra el último `CaptureCreated` sin fix asociado comparando `event_id` con `error_event_id` de los `FixLinked`.
 6. Retorna el más reciente (ordenado por timestamp).
+
+**Nota**: Usa `error_event_id` en lugar de `error_hash` para permitir que errores con el mismo hash (errores repetidos) tengan fixes independientes. Esto mejora la precisión de la trazabilidad.
 
 **Ejemplo**:
 ```python
@@ -213,6 +215,7 @@ error = find_last_unfixed_capture(events_path, day_id="2026-01-18")
 - `append_to_jornada_auto_section` mantiene la estructura de la bitácora (secciones manuales vs automáticas).
 - `compute_content_hash` usa SHA256 para detectar errores idénticos (no similares, solo idénticos).
 - `find_last_unfixed_capture` lee todo el archivo en memoria (puede ser lento con muchos eventos, pero suficiente para v0.1).
+- `find_last_unfixed_capture` usa `error_event_id` (v0.1+) en lugar de `error_hash` para asociar fixes a errores específicos, permitiendo que errores repetidos tengan fixes independientes.
 
 ---
 

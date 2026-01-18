@@ -79,6 +79,9 @@ def find_last_unfixed_capture(
     Busca el último CaptureCreated sin FixLinked asociado.
     Si se proporciona session_id, busca solo en esa sesión.
     Si se proporciona day_id, busca solo en ese día.
+    
+    Usa error_event_id para asociar FixLinked a CaptureCreated específicos,
+    permitiendo que errores con el mismo hash tengan fixes independientes.
     """
     events = list(read_json_lines(events_path))
     
@@ -90,24 +93,28 @@ def find_last_unfixed_capture(
     if session_id:
         events = [e for e in events if e.get("session", {}).get("session_id") == session_id]
     
-    # Recopilar todos los CaptureCreated con sus hashes
-    captures: dict[str, dict[str, Any]] = {}
+    # Recopilar todos los CaptureCreated
+    captures: list[dict[str, Any]] = []
     for event in events:
         if event.get("type") == "CaptureCreated":
             error_hash = event.get("payload", {}).get("error_hash")
             if error_hash:
-                captures[error_hash] = event
+                captures.append(event)
     
-    # Recopilar todos los FixLinked para saber cuáles están resueltos
-    fixed_hashes: set[str] = set()
+    # Recopilar todos los FixLinked usando error_event_id (más preciso que error_hash)
+    fixed_event_ids: set[str] = set()
     for event in events:
         if event.get("type") == "FixLinked":
-            error_hash = event.get("payload", {}).get("error_hash")
-            if error_hash:
-                fixed_hashes.add(error_hash)
+            error_event_id = event.get("payload", {}).get("error_event_id")
+            if error_event_id:
+                fixed_event_ids.add(error_event_id)
     
-    # Encontrar el último CaptureCreated sin fix
-    unfixed = [capture for hash_val, capture in captures.items() if hash_val not in fixed_hashes]
+    # Encontrar el último CaptureCreated sin fix (usando event_id específico)
+    unfixed = [
+        capture 
+        for capture in captures 
+        if capture.get("event_id") not in fixed_event_ids
+    ]
     
     if not unfixed:
         return None
