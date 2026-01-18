@@ -4,6 +4,9 @@
   import SummariesViewer from "./components/SummariesViewer.svelte";
   import DocsViewer from "./components/DocsViewer.svelte";
   import BoardView from "./components/BoardView.svelte";
+  import SessionObjectives from "./components/SessionObjectives.svelte";
+  import BitacoraEditor from "./components/BitacoraEditor.svelte";
+  import TemporalNotesViewer from "./components/TemporalNotesViewer.svelte";
 
   const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
@@ -18,8 +21,10 @@
   let loading = true; // Solo para carga inicial
   let today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   let activeTab = "overview"; // overview, bitacora, summaries, docs
+  let zonaVivaTab = "sesion"; // sesion, bitacora, objetivos, temporales
   let boardOpen = false; // Control de visibilidad del board
   let zonaVivaElement = null; // Referencia al contenedor de zona viva para preservar scroll
+  let temporalNotesCount = 0; // Contador de notas temporales
 
   const fetchJson = async (path) => {
     const response = await fetch(`${API_BASE}${path}`);
@@ -74,7 +79,7 @@
     const scrollTop = zonaVivaElement?.scrollTop || 0;
     
     try {
-      const [sessionsRes, currentRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes] =
+      const [sessionsRes, currentRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes, temporalNotesRes] =
         await Promise.all([
           fetchJson("/sessions/"),
           fetchJson("/sessions/current/"),
@@ -84,6 +89,7 @@
           fetchJson("/metrics/"),
           fetchJson("/captures/errors/open/"),
           fetchJson("/day/today/"),
+          fetchJson(`/notes/tmp/${today}/`).catch(() => ({ files: [] })),
         ]);
       
       // Actualizar datos sin causar parpadeo
@@ -95,6 +101,7 @@
       metrics = metricsRes || {};
       openErrors = errorsRes.errors || [];
       dayToday = dayTodayRes || null;
+      temporalNotesCount = (temporalNotesRes?.files || []).length;
       
       // Restaurar posición de scroll después de la actualización
       requestAnimationFrame(() => {
@@ -383,42 +390,66 @@
         Abrir Board
       </button>
     </div>
+    <div class="tabs">
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "sesion"}
+        on:click={() => (zonaVivaTab = "sesion")}
+      >
+        Sesión
+      </button>
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "bitacora"}
+        on:click={() => (zonaVivaTab = "bitacora")}
+      >
+        Bitácora
+      </button>
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "objetivos"}
+        on:click={() => (zonaVivaTab = "objetivos")}
+      >
+        Objetivos
+      </button>
+      {#if temporalNotesCount > 0}
+        <button
+          class="tab-button"
+          class:active={zonaVivaTab === "temporales"}
+          on:click={() => (zonaVivaTab = "temporales")}
+        >
+          Notas Temporales ({temporalNotesCount})
+        </button>
+      {/if}
+    </div>
     <div class="tab-content zona-viva-content" bind:this={zonaVivaElement}>
       {#if loading}
-      <div class="loading-state">
-        <p class="muted">Cargando...</p>
-      </div>
-    {:else}
-      {#if currentSession}
-        <div class="card session-card">
-          <div class="card-header">
-            <div class="mono session-id">
-              {currentSession.day_id} {currentSession.session_id}
+        <div class="loading-state">
+          <p class="muted">Cargando...</p>
+        </div>
+      {:else if zonaVivaTab === "sesion"}
+        <SessionObjectives session={currentSession} />
+        {#if currentSession}
+          <div class="card session-card">
+            <div class="card-header">
+              <div class="mono session-id">
+                {currentSession.day_id} {currentSession.session_id}
+              </div>
             </div>
-          </div>
-          <div class="card-body">
-            <div class="session-intent">{currentSession.intent}</div>
-            <div class="session-details">
-              <div class="detail-item">
-                <span class="detail-label">DoD:</span>
-                <span class="muted">{currentSession.dod}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Repo:</span>
-                <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Branch:</span>
-                <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+            <div class="card-body">
+              <div class="session-details">
+                <div class="detail-item">
+                  <span class="detail-label">Repo:</span>
+                  <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Branch:</span>
+                  <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      {:else}
-        <div class="empty-state">
-          <p class="muted">No hay sesión activa.</p>
-        </div>
-      {/if}
+        {/if}
       <h3>Sesiones de hoy</h3>
       {#if dayToday && dayToday.sessions && dayToday.sessions.length > 0}
         <div class="list">
@@ -661,6 +692,17 @@
           <p class="muted">No hay errores abiertos.</p>
         </div>
       {/if}
+      {:else if zonaVivaTab === "bitacora"}
+        <BitacoraEditor apiBase={API_BASE} dayId={today} />
+      {:else if zonaVivaTab === "objetivos"}
+        <SessionObjectives session={currentSession} />
+        {#if !currentSession}
+          <div class="empty-state">
+            <p class="muted">No hay sesión activa para mostrar objetivos.</p>
+          </div>
+        {/if}
+      {:else if zonaVivaTab === "temporales"}
+        <TemporalNotesViewer apiBase={API_BASE} dayId={today} />
       {/if}
     </div>
   </section>

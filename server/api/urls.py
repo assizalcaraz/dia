@@ -17,6 +17,10 @@ urlpatterns = [
     path("day/closed/", views.day_closed, name="day_closed"),
     path("day/today/", views.day_today, name="day_today"),
     path("jornada/<str:day_id>/", views.jornada, name="jornada"),
+    path("jornada/<str:day_id>/human/", views.jornada_human_update, name="jornada_human_update"),
+    path("notes/tmp/<str:day_id>/", views.notes_tmp_list, name="notes_tmp_list"),
+    path("notes/tmp/<str:day_id>/<str:file_name>", views.notes_tmp_content, name="notes_tmp_content"),
     path("captures/recent/", views.captures_recent, name="captures_recent"),
     path("captures/errors/open/", views.errors_open, name="errors_open"),
+    path("endpoints.md", views.endpoints_doc, name="endpoints_doc"),
 ]

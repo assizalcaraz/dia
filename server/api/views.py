@@ -307,6 +307,132 @@ def jornada(request, day_id: str):
     return JsonResponse({"day_id": day_id, "content": content})
 
 
+def jornada_human_update(request, day_id: str):
+    """Actualiza solo las secciones humanas (1 y 2) de la bitácora."""
+    from datetime import datetime
+    import json
+    
+    # Validar que es día actual
+    today = datetime.now().astimezone().date().isoformat()
+    if day_id != today:
+        return JsonResponse(
+            {"error": "Solo se puede editar la bitácora del día actual"},
+            status=403
+        )
+    
+    if request.method != "PUT":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    
+    try:
+        data = json.loads(request.body)
+        new_human_content = data.get("content", "").strip()
+    except (json.JSONDecodeError, KeyError):
+        return JsonResponse({"error": "Datos inválidos"}, status=400)
+    
+    jornada_path = Path(settings.DATA_ROOT) / "bitacora" / f"{day_id}.md"
+    
+    # Leer contenido existente
+    if jornada_path.exists():
+        existing_content = jornada_path.read_text(encoding="utf-8")
+        
+        # Separar secciones humanas y automáticas
+        separator = "---\n\n## 3. Registro automático (NO EDITAR)"
+        separator_index = existing_content.find(separator)
+        
+        if separator_index != -1:
+            # Hay sección automática, preservarla
+            auto_section = existing_content[separator_index:]
+            # Reconstruir con nuevas secciones humanas
+            new_content = new_human_content + "\n\n" + auto_section
+        else:
+            # No hay sección automática aún, solo actualizar humanas
+            new_content = new_human_content
+    else:
+        # No existe, crear nueva con template básico
+        # Si hay contenido humano, usarlo; si no, crear estructura básica
+        if new_human_content:
+            new_content = new_human_content
+        else:
+            # Crear estructura básica
+            new_content = (
+                f"# Jornada {day_id}\n\n"
+                "## 1. Intención del día (manual)\n"
+                "- Objetivo principal:\n"
+                "- Definición de Hecho (DoD):\n"
+                "- Restricciones / contexto:\n\n"
+                "## 2. Notas humanas (manual)\n"
+                "- ideas\n"
+                "- dudas\n"
+                "- decisiones\n"
+                "- observaciones subjetivas relevantes\n\n"
+                "---\n\n"
+                "## 3. Registro automático (NO EDITAR)\n"
+                "(append-only, escrito por /dia)\n\n"
+            )
+    
+    # Validar que no se intentó modificar el separador
+    if "---\n\n## 3. Registro automático (NO EDITAR)" in new_human_content:
+        return JsonResponse(
+            {"error": "No se puede modificar el separador de secciones"},
+            status=400
+        )
+    
+    # Escribir archivo
+    try:
+        jornada_path.parent.mkdir(parents=True, exist_ok=True)
+        jornada_path.write_text(new_content, encoding="utf-8")
+        return JsonResponse({"day_id": day_id, "status": "updated"})
+    except Exception as e:
+        return JsonResponse({"error": f"Error al escribir archivo: {str(e)}"}, status=500)
+
+
+def notes_tmp_list(request, day_id: str):
+    """Lista archivos temporales del día."""
+    notes_dir = Path(settings.DATA_ROOT) / "notes" / "tmp" / day_id
+    if not notes_dir.exists():
+        return JsonResponse({"day_id": day_id, "files": []})
+    
+    files = []
+    for md_file in notes_dir.glob("*.md"):
+        stat = md_file.stat()
+        files.append({
+            "name": md_file.name,
+            "path": str(md_file.relative_to(Path(settings.DATA_ROOT))),
+            "size": stat.st_size,
+            "modified": stat.st_mtime,
+        })
+    
+    # Ordenar por fecha de modificación (más reciente primero)
+    files.sort(key=lambda f: f["modified"], reverse=True)
+    
+    return JsonResponse({"day_id": day_id, "files": files})
+
+
+def notes_tmp_content(request, day_id: str, file_name: str):
+    """Retorna contenido de un archivo temporal."""
+    # Validar que el nombre del archivo no contenga path traversal
+    if ".." in file_name or "/" in file_name or "\\" in file_name:
+        return JsonResponse({"error": "Nombre de archivo inválido"}, status=400)
+    
+    notes_dir = Path(settings.DATA_ROOT) / "notes" / "tmp" / day_id
+    file_path = notes_dir / file_name
+    
+    if not file_path.exists():
+        return JsonResponse({"error": "Archivo no encontrado"}, status=404)
+    
+    # Validar que el archivo está dentro del directorio esperado
+    try:
+        file_path.resolve().relative_to(notes_dir.resolve())
+    except ValueError:
+        return JsonResponse({"error": "Ruta inválida"}, status=400)
+    
+    try:
+        content = file_path.read_text(encoding="utf-8")
+        return JsonResponse({"day_id": day_id, "file_name": file_name, "content": content})
+    except Exception as e:
+        return JsonResponse({"error": f"Error al leer archivo: {str(e)}"}, status=500)
+
+
 def captures_recent(request):
     """Retorna capturas recientes (CaptureCreated y CaptureReoccurred)."""
     limit = int(request.GET.get("limit", "20"))
@@ -479,6 +605,29 @@ def docs_list(request):
 def doc_content(request, doc_path: str):
     """Devuelve contenido markdown de un documento."""
     # docs/ está montado directamente en /docs en el contenedor
+    docs_dir = Path("/docs")
+    doc_file = docs_dir / doc_path
+    
+    # Validar que el archivo está dentro de docs/ (seguridad)
+    try:
+        doc_file.resolve().relative_to(docs_dir.resolve())
+    except ValueError:
+        return JsonResponse({"error": "Ruta inválida"}, status=400)
+    
+    if not doc_file.exists() or not doc_file.is_file():
+        return JsonResponse({"error": "Documento no encontrado"}, status=404)
+    
+    if doc_file.suffix != ".md":
+        return JsonResponse({"error": "Solo se permiten archivos .md"}, status=400)
+    
+    content = doc_file.read_text(encoding="utf-8")
+    return JsonResponse({"path": doc_path, "content": content})
+
+
+def endpoints_doc(request):
+    """Endpoint para /api/endpoints.md - retorna la documentación de endpoints."""
+    # Usar el mismo endpoint que doc_content pero con la ruta fija
+    doc_path = "modules/api/endpoints.md"
     docs_dir = Path("/docs")
     doc_file = docs_dir / doc_path
     
