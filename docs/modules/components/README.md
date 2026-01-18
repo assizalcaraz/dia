@@ -79,8 +79,22 @@ Ver [Documentación de API](../api/endpoints.md) para detalles completos.
 
 ---
 
+## Sistema de Actualización
+
+El componente principal `App.svelte` implementa un sistema de actualización incremental que:
+
+- Actualiza datos cada 5 segundos sin causar parpadeo
+- Preserva estado de UI (tooltips, scroll, selecciones)
+- Pausa automáticamente cuando la ventana no está visible
+- Solo muestra indicador de carga en la carga inicial
+
+Ver [ALTERNATIVAS_REFRESH.md](../ui/ALTERNATIVAS_REFRESH.md) para documentación completa del sistema.
+
+---
+
 ## Referencias
 
 - [Documentación de módulos CLI](../cli/README.md)
 - [Documentación de API](../api/endpoints.md)
 - [Guías de comandos](../../guides/)
+- [Sistema de actualización incremental](../ui/ALTERNATIVAS_REFRESH.md)

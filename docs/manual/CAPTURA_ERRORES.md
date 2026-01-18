@@ -21,37 +21,80 @@ El sistema de captura de errores permite:
 
 ## Comandos CLI
 
-### `dia cap` — Capturar error/log
+### `dia E` — Capturar error con título automático (recomendado)
 
 **Sintaxis**:
 ```bash
-dia cap --kind <error|log> --title "<descripción>" [--repo <path>] [--stdin]
+dia E ["mensaje de error"] [--repo <path>] [--stdin]
 ```
 
 **Ejemplos**:
 
-**Por pipe** (cuando un comando falla):
+**Con mensaje como argumento** (más rápido):
 ```bash
-docker-compose up 2>&1 | dia cap --kind error --title "docker up falla" --data-root /ruta/al/monorepo/data --area it
+dia E "Error al cargar bitácora: HTTP 404" --data-root /ruta/al/monorepo/data --area it
 ```
 
-**Pegado manual**:
+**Por pipe**:
 ```bash
-dia cap --kind error --title "deploy staging" --stdin --data-root /ruta/al/monorepo/data --area it
-# Pegar contenido del error, luego Ctrl-D
+docker-compose up 2>&1 | dia E --data-root /ruta/al/monorepo/data --area it
+```
+
+**Qué hace**:
+1. Genera título automáticamente (LLM si está configurado, o análisis simple)
+2. Lee contenido desde stdin o argumento
+3. Calcula hash SHA256 del contenido
+4. Busca errores similares anteriores (por palabras clave)
+5. Verifica si el error ya existe (mismo hash)
+6. Guarda artifact y genera metadatos
+7. Registra evento `CaptureCreated` o `CaptureReoccurred`
+8. Muestra sugerencias de próximos pasos según el flujo
+
+**Salida mejorada**:
+- Muestra errores similares encontrados
+- Indica si error repetido tiene fix asociado
+- Sugiere acciones siguientes (revisar artifact → fix → commit)
+
+**Parámetros**:
+- `mensaje de error` (opcional): mensaje directo como argumento
+- `--repo` (optional): path del repo (default: cwd)
+- `--stdin` (flag): forzar lectura desde stdin
+
+---
+
+### `dia cap` — Capturar error/log (comando completo)
+
+**Sintaxis**:
+```bash
+dia cap --kind <error|log> --title "<descripción>" [--auto] [--repo <path>] [--stdin]
+```
+
+**Ejemplos**:
+
+**Con título automático**:
+```bash
+echo "Error message" | dia cap --kind error --auto --data-root /ruta/data --area it
+```
+
+**Con título manual**:
+```bash
+docker-compose up 2>&1 | dia cap --kind error --title "docker up falla" --data-root /ruta/data --area it
 ```
 
 **Qué hace**:
 1. Lee contenido desde stdin (pipe o manual)
-2. Calcula hash SHA256 del contenido
-3. Verifica si el error ya existe (mismo hash)
-4. Guarda artifact en `data/artifacts/captures/YYYY-MM-DD/Sxx/cap_<id>.txt`
-5. Genera `.meta.json` con metadatos
-6. Registra evento `CaptureCreated` o `CaptureReoccurred`
+2. Si usa `--auto`, genera título automáticamente
+3. Calcula hash SHA256 del contenido
+4. Verifica si el error ya existe (mismo hash)
+5. Busca errores similares (si es error)
+6. Guarda artifact en `data/artifacts/captures/YYYY-MM-DD/Sxx/cap_<id>.txt`
+7. Genera `.meta.json` con metadatos
+8. Registra evento `CaptureCreated` o `CaptureReoccurred`
 
 **Parámetros**:
 - `--kind` (required): `error` | `log`
-- `--title` (required): descripción breve
+- `--title` (opcional si se usa `--auto`): descripción breve
+- `--auto` (flag): generar título automáticamente con LLM/análisis
 - `--repo` (optional): path del repo (default: cwd)
 - `--stdin` (flag): forzar lectura desde stdin (default: auto-detecta pipe)
 
@@ -59,16 +102,33 @@ dia cap --kind error --title "deploy staging" --stdin --data-root /ruta/al/monor
 - Sesión activa (`dia start` ejecutado previamente)
 - Repo Git válido
 
-**Salida**:
+**Salida (error nuevo)**:
 ```bash
-Captura creada: cap_a1b2c3d4e5f6
-Artifact: data/artifacts/captures/2026-01-18/S01/cap_a1b2c3d4e5f6.txt
-Meta: data/artifacts/captures/2026-01-18/S01/cap_a1b2c3d4e5f6.meta.json
+Título generado: Error al cargar bitácora: HTTP 404
+✅ Captura creada: cap_a1b2c3d4e5f6
+   Artifact: data/artifacts/captures/2026-01-18/S01/cap_a1b2c3d4e5f6.txt
+   Meta: data/artifacts/captures/2026-01-18/S01/cap_a1b2c3d4e5f6.meta.json
+
+   📋 Errores similares encontrados (2):
+      - Error al cargar bitácora: HTTP 500 (Sesión S01, 2026-01-17)
+      - Error HTTP en bitácora (Sesión S01, 2026-01-16)
+
+   💡 Próximos pasos:
+      1. Revisar artifact: data/artifacts/captures/...
+      2. Analizar y aplicar fix
+      3. Linkear fix: dia fix --title "descripción" --data-root ... --area it
+      4. Commit: dia pre-feat --data-root ... --area it
 ```
 
 **Si el error se repite**:
 ```bash
-Error repetido detectado (hash: a1b2c3d4...)
+⚠️  Error repetido detectado (hash: a1b2c3d4...)
+   Original: 2026-01-17T10:30:00 - Error al cargar bitácora: HTTP 404
+   Sesión original: S01
+   ℹ️  Este error ya fue resuelto anteriormente
+   # o
+   ⚠️  Este error aún no tiene fix asociado
+   💡 Sugerencia: Revisa el fix anterior o aplica uno nuevo con 'dia fix'
 ```
 
 ---
@@ -315,7 +375,7 @@ Muestra sección **"Errores abiertos"** con:
 
 Muestra métrica: **"Errores abiertos: N"** en el card de resumen.
 
-**Auto-refresh**: Cada 5 segundos.
+**Auto-refresh incremental**: Actualización silenciosa cada 5 segundos que preserva el estado de la UI (tooltips, scroll). Pausa automáticamente cuando la ventana no está visible. Ver [ALTERNATIVAS_REFRESH.md](../../modules/ui/ALTERNATIVAS_REFRESH.md) para detalles.
 
 ---
 
@@ -324,9 +384,20 @@ Muestra métrica: **"Errores abiertos: N"** en el card de resumen.
 ### 1. Error ocurre
 
 ```bash
-# Capturar error
+# Opción rápida (recomendado): comando corto con título automático
+dia E "descripción del error" --data-root /ruta/data --area it
+
+# O desde pipe
+comando_que_falla 2>&1 | dia E --data-root /ruta/data --area it
+
+# Opción completa: con título manual
 comando_que_falla 2>&1 | dia cap --kind error --title "descripción" --data-root /ruta/data --area it
 ```
+
+**El comando automáticamente**:
+- Genera título descriptivo
+- Busca errores similares anteriores
+- Muestra sugerencias de próximos pasos
 
 ### 2. Analizar y arreglar
 

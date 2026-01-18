@@ -15,10 +15,11 @@
   let metrics = {};
   let openErrors = [];
   let dayToday = null; // Información del día actual
-  let loading = true;
+  let loading = true; // Solo para carga inicial
   let today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   let activeTab = "overview"; // overview, bitacora, summaries, docs
   let boardOpen = false; // Control de visibilidad del board
+  let zonaVivaElement = null; // Referencia al contenedor de zona viva para preservar scroll
 
   const fetchJson = async (path) => {
     const response = await fetch(`${API_BASE}${path}`);
@@ -37,6 +38,7 @@
     return emojis[assessment] || "❓";
   };
 
+  // Carga inicial completa (con indicador de carga)
   const load = async () => {
     loading = true;
     try {
@@ -66,6 +68,47 @@
     }
   };
 
+  // Actualización incremental sin parpadeo (preserva estado de UI)
+  const loadIncremental = async () => {
+    // Preservar posición de scroll antes de actualizar
+    const scrollTop = zonaVivaElement?.scrollTop || 0;
+    
+    try {
+      const [sessionsRes, currentRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes] =
+        await Promise.all([
+          fetchJson("/sessions/"),
+          fetchJson("/sessions/current/"),
+          fetchJson("/summaries/"),
+          fetchJson(`/summaries/latest/?day_id=${today}&mode=rolling`),
+          fetchJson(`/summaries/?day_id=${today}&mode=rolling&limit=20`),
+          fetchJson("/metrics/"),
+          fetchJson("/captures/errors/open/"),
+          fetchJson("/day/today/"),
+        ]);
+      
+      // Actualizar datos sin causar parpadeo
+      sessions = sessionsRes.sessions || [];
+      currentSession = currentRes.session;
+      summaries = summariesRes.summaries || [];
+      latestRollingSummary = latestRes.summary;
+      rollingTimeline = timelineRes.summaries || [];
+      metrics = metricsRes || {};
+      openErrors = errorsRes.errors || [];
+      dayToday = dayTodayRes || null;
+      
+      // Restaurar posición de scroll después de la actualización
+      requestAnimationFrame(() => {
+        if (zonaVivaElement) {
+          zonaVivaElement.scrollTop = scrollTop;
+        }
+      });
+    } catch (error) {
+      console.error("Error en actualización incremental:", error);
+      // No mostrar error al usuario para no interrumpir
+    }
+    // No establecer loading = true/false para evitar parpadeo
+  };
+
   const formatElapsed = (minutes) => {
     if (minutes === null || minutes === undefined) return "—";
     if (minutes < 60) return `${minutes}m`;
@@ -74,12 +117,49 @@
     return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
   };
 
-  let intervalId;
+  let intervalId = null;
 
   onMount(() => {
+    // Carga inicial completa
     load();
-    intervalId = setInterval(load, 5000);
-    return () => clearInterval(intervalId);
+    
+    // Función para iniciar polling incremental
+    const startPolling = () => {
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(loadIncremental, 5000);
+    };
+    
+    // Función para detener polling
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+    
+    // Manejar visibilidad de la página (Page Visibility API)
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Pausar cuando la ventana no está visible
+        stopPolling();
+      } else {
+        // Cargar datos frescos al volver y reanudar polling
+        load();
+        startPolling();
+      }
+    };
+    
+    // Iniciar polling incremental
+    startPolling();
+    
+    // Escuchar cambios de visibilidad
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Cleanup al desmontar
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   });
 
   // Obtener ID del board (session_id o day_id)
@@ -91,6 +171,65 @@
 
   function closeBoard() {
     boardOpen = false;
+  }
+
+  function handleErrorTooltipPosition(event, tooltipElement) {
+    if (!tooltipElement) return;
+    
+    const button = event.currentTarget;
+    if (!button) return;
+    
+    const rect = button.getBoundingClientRect();
+    const tooltipWidth = 300;
+    const spacing = 8;
+    
+    // Calcular posición inicial (debajo del botón)
+    let tooltipTop = rect.bottom + spacing;
+    let tooltipLeft = rect.left;
+    
+    // Asegurar que no se salga de la pantalla por la izquierda
+    if (tooltipLeft < 0) {
+      tooltipLeft = 0;
+    }
+    
+    // Asegurar que no se salga de la pantalla por la derecha
+    const screenMaxLeft = window.innerWidth - tooltipWidth;
+    if (tooltipLeft > screenMaxLeft) {
+      tooltipLeft = screenMaxLeft;
+    }
+    
+    // Usar requestAnimationFrame para asegurar que los estilos se apliquen correctamente
+    requestAnimationFrame(() => {
+      // Obtener altura real después de renderizar
+      const tooltipHeight = tooltipElement.offsetHeight || 200;
+      
+      // Asegurar que no se salga de la pantalla por abajo
+      const screenMaxTop = window.innerHeight - tooltipHeight - spacing;
+      if (tooltipTop > screenMaxTop) {
+        // Si no cabe abajo, ponerlo arriba del botón
+        tooltipTop = rect.top - tooltipHeight - spacing;
+        // Si tampoco cabe arriba, ajustar al máximo disponible
+        if (tooltipTop < 0) {
+          tooltipTop = spacing;
+          // Limitar altura si es necesario
+          tooltipElement.style.maxHeight = `${window.innerHeight - tooltipTop - spacing * 2}px`;
+          tooltipElement.style.overflowY = 'auto';
+        } else {
+          tooltipElement.style.maxHeight = '400px';
+          tooltipElement.style.overflowY = 'auto';
+        }
+      } else {
+        tooltipElement.style.maxHeight = '400px';
+        tooltipElement.style.overflowY = 'auto';
+      }
+      
+      tooltipElement.style.top = `${tooltipTop}px`;
+      tooltipElement.style.left = `${tooltipLeft}px`;
+      tooltipElement.style.opacity = '1';
+      tooltipElement.style.visibility = 'visible';
+      tooltipElement.style.pointerEvents = 'auto';
+      tooltipElement.style.display = 'block';
+    });
   }
 </script>
 
@@ -219,40 +358,42 @@
         Abrir Board
       </button>
     </div>
-    <div class="tab-content">
+    <div class="tab-content zona-viva-content" bind:this={zonaVivaElement}>
       {#if loading}
       <div class="loading-state">
         <p class="muted">Cargando...</p>
       </div>
-    {:else if !currentSession}
-      <div class="empty-state">
-        <p class="muted">No hay sesión activa.</p>
-      </div>
     {:else}
-      <div class="card session-card">
-        <div class="card-header">
-          <div class="mono session-id">
-            {currentSession.day_id} {currentSession.session_id}
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="session-intent">{currentSession.intent}</div>
-          <div class="session-details">
-            <div class="detail-item">
-              <span class="detail-label">DoD:</span>
-              <span class="muted">{currentSession.dod}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Repo:</span>
-              <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
-            </div>
-            <div class="detail-item">
-              <span class="detail-label">Branch:</span>
-              <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+      {#if currentSession}
+        <div class="card session-card">
+          <div class="card-header">
+            <div class="mono session-id">
+              {currentSession.day_id} {currentSession.session_id}
             </div>
           </div>
+          <div class="card-body">
+            <div class="session-intent">{currentSession.intent}</div>
+            <div class="session-details">
+              <div class="detail-item">
+                <span class="detail-label">DoD:</span>
+                <span class="muted">{currentSession.dod}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Repo:</span>
+                <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">Branch:</span>
+                <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      {:else}
+        <div class="empty-state">
+          <p class="muted">No hay sesión activa.</p>
+        </div>
+      {/if}
       <h3>Sesiones de hoy</h3>
       {#if dayToday && dayToday.sessions && dayToday.sessions.length > 0}
         <div class="list">
@@ -350,22 +491,71 @@
       {/if}
       <h3>Errores abiertos</h3>
       {#if openErrors.length > 0}
-        <div class="list">
-          {#each openErrors.slice(0, 5) as error}
-            <div class="card error-card">
-              <div class="card-header">
-                <div class="mono">{error.title || "Sin título"}</div>
+        <div class="errors-container">
+          <div class="errors-header">
+            <div class="errors-header-title">⚠️ {openErrors.length} {openErrors.length === 1 ? 'error' : 'errores'} abierto{openErrors.length === 1 ? '' : 's'}</div>
+            {#if openErrors.length > 10}
+              <div class="errors-header-subtitle">Mostrando los 10 más recientes</div>
+            {/if}
+          </div>
+          <div class="errors-stack">
+            {#each openErrors.slice(0, 10) as error, index}
+              {@const errorTitle = error.title || "Sin título"}
+              {@const errorSession = error.session?.session_id || "N/A"}
+              {@const errorDate = error.ts ? new Date(error.ts).toLocaleString() : "N/A"}
+              
+              <div 
+                class="error-item"
+                style="z-index: {openErrors.length - index};"
+              >
+                <button
+                  class="error-tab"
+                  on:mouseenter={(e) => {
+                    const button = e.currentTarget;
+                    const tooltip = button.querySelector('.error-content');
+                    if (tooltip) {
+                      handleErrorTooltipPosition(e, tooltip);
+                    }
+                  }}
+                  on:mouseleave={(e) => {
+                    const button = e.currentTarget;
+                    const tooltip = button.querySelector('.error-content');
+                    if (tooltip) {
+                      setTimeout(() => {
+                        tooltip.style.opacity = '0';
+                        tooltip.style.visibility = 'hidden';
+                        tooltip.style.pointerEvents = 'none';
+                      }, 150);
+                    }
+                  }}
+                  type="button"
+                >
+                  <span class="error-tab-title">{errorTitle}</span>
+                  
+                  <!-- Tooltip con detalles -->
+                  <div class="error-content">
+                    <h4 class="error-content-title">{errorTitle}</h4>
+                    <div class="error-content-meta">
+                      <div class="error-meta-item">
+                        <span class="error-meta-label">Sesión:</span>
+                        <span class="error-meta-value">{errorSession}</span>
+                      </div>
+                      <div class="error-meta-item">
+                        <span class="error-meta-label">Fecha:</span>
+                        <span class="error-meta-value">{errorDate}</span>
+                      </div>
+                      {#if error.artifact_ref}
+                        <div class="error-meta-item">
+                          <span class="error-meta-label">Artifact:</span>
+                          <span class="error-meta-value mono">{error.artifact_ref}</span>
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                </button>
               </div>
-              <div class="card-body">
-                <div class="muted">
-                  {error.session?.session_id || "N/A"} — {error.ts ? new Date(error.ts).toLocaleString() : "N/A"}
-                </div>
-                {#if error.artifact_ref}
-                  <div class="muted mono">Artifact: {error.artifact_ref}</div>
-                {/if}
-              </div>
-            </div>
-          {/each}
+            {/each}
+          </div>
         </div>
       {:else}
         <div class="empty-state">

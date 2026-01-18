@@ -127,11 +127,14 @@
 
 #### Componentes Svelte
 
-- **`App.svelte`** (122 líneas): Componente principal
-  - **Zona indeleble**: Historial de sesiones, métricas
-  - **Zona viva**: Sesión activa, checklist, eventos recientes
-  - Auto-refresh cada 5 segundos
-  - Manejo de estados de carga
+- **`App.svelte`** (494 líneas): Componente principal
+  - **Zona indeleble**: Historial de sesiones, métricas, timeline de veredictos
+  - **Zona viva**: Sesión activa, checklist, resumen rolling, errores abiertos
+  - **Auto-refresh incremental**: Actualización silenciosa cada 5 segundos sin parpadeo
+    - Preserva estado de UI (tooltips, scroll)
+    - Pausa automática cuando la ventana no está visible (Page Visibility API)
+    - Solo muestra indicador de carga en carga inicial
+  - Manejo de estados de carga granular
 
 - **`main.js`** (8 líneas): Punto de entrada
 - **`app.css`** (46 líneas): Estilos básicos
@@ -429,11 +432,13 @@
 
 ### 6.7 UI Svelte
 
-- ✅ Zona indeleble (historial)
-- ✅ Zona viva (sesión activa)
-- ✅ Auto-refresh
-- ✅ Manejo de estados de carga
+- ✅ Zona indeleble (historial, métricas, timeline de veredictos)
+- ✅ Zona viva (sesión activa, checklist, resumen rolling, errores abiertos)
+- ✅ Auto-refresh incremental (sin parpadeo, preserva estado de UI)
+- ✅ Page Visibility API (pausa cuando ventana no está visible)
+- ✅ Manejo de estados de carga granular
 - ✅ Integración con API
+- ✅ Preservación de scroll y tooltips durante actualizaciones
 
 ---
 

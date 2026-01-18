@@ -32,11 +32,15 @@ Panel derecho que muestra:
 
 ## Funcionalidad
 
-1. **Auto-refresh**: Recarga datos cada 5 segundos
+1. **Auto-refresh incremental**: Actualiza datos cada 5 segundos sin causar parpadeo
+   - Usa actualización silenciosa que preserva estado de UI (tooltips, scroll)
+   - Pausa automáticamente cuando la ventana no está visible (Page Visibility API)
+   - Solo muestra indicador de carga en la carga inicial
 2. **Carga inicial**: Carga todos los datos al montar el componente
 3. **Navegación por tabs**: Permite cambiar entre vistas en la zona indeleble
 4. **Visualización de métricas**: Muestra contadores de sesiones, resúmenes y errores
 5. **Timeline de veredictos**: Muestra evolución de assessments rolling con indicadores de cambio
+6. **Preservación de estado**: Mantiene posición de scroll y tooltips abiertos durante actualizaciones
 
 ---
 
@@ -73,9 +77,10 @@ Panel derecho que muestra:
 - `metrics`: Métricas generales
 - `openErrors`: Array de errores abiertos
 - `dayToday`: Información del día actual
-- `loading`: Estado de carga
+- `loading`: Estado de carga (solo usado en carga inicial)
 - `today`: ID del día actual (formato `YYYY-MM-DD`)
 - `activeTab`: Tab activo en zona indeleble (`"overview"`, `"bitacora"`, `"summaries"`, `"docs"`)
+- `zonaVivaElement`: Referencia al contenedor de zona viva (para preservar scroll)
 
 ---
 
@@ -83,16 +88,26 @@ Panel derecho que muestra:
 
 - `fetchJson(path)`: Función helper para hacer requests a la API
 - `getAssessmentEmoji(assessment)`: Retorna emoji según assessment (✅ ON_TRACK, ⚠️ OFF_TRACK, 🚫 BLOCKED)
-- `load()`: Carga todos los datos de la API
+- `load()`: Carga inicial completa de todos los datos (con indicador de carga)
+- `loadIncremental()`: Actualización silenciosa que preserva estado de UI (sin parpadeo)
 - `formatElapsed(minutes)`: Formatea duración en minutos a formato legible
 
 ---
 
 ## Comportamiento
 
-- Al montar, carga todos los datos y establece intervalo de refresh cada 5 segundos
-- Al desmontar, limpia el intervalo
-- Muestra estados de carga mientras se obtienen datos
+- **Al montar**: 
+  - Carga inicial completa con indicador de carga
+  - Establece intervalo de actualización incremental cada 5 segundos
+  - Escucha cambios de visibilidad de la página (Page Visibility API)
+- **Durante actualizaciones incrementales**:
+  - Actualiza datos sin mostrar indicador de carga (sin parpadeo)
+  - Preserva posición de scroll de la zona viva
+  - No cierra tooltips abiertos
+- **Cuando la ventana no está visible**: Pausa el polling automáticamente
+- **Al volver a la ventana**: Carga datos frescos y reanuda polling
+- **Al desmontar**: Limpia intervalos y event listeners
+- Muestra estados de carga solo en la carga inicial
 - Muestra mensajes informativos cuando no hay datos disponibles
 - El botón "Regenerar ahora" muestra un alert con el comando sugerido (no ejecuta comandos)
 
@@ -111,4 +126,5 @@ Panel derecho que muestra:
 - [BitacoraViewer](./components/BitacoraViewer.md) — Componente de bitácoras
 - [SummariesViewer](./components/SummariesViewer.md) — Componente de resúmenes
 - [DocsViewer](./components/DocsViewer.md) — Componente de documentación
+- [ALTERNATIVAS_REFRESH.md](./ui/ALTERNATIVAS_REFRESH.md) — Documentación sobre el sistema de actualización incremental
 - [Documentación de API](./api/endpoints.md) — Endpoints de la API
