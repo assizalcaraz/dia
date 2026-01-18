@@ -260,6 +260,13 @@ body {
   letter-spacing: 0.05em;
 }
 
+.metric-label .user-name {
+  text-transform: none;
+  font-size: 11px;
+  color: var(--color-text-subtle);
+  font-weight: 400;
+}
+
 /* Card structure */
 .card-header {
   margin-bottom: var(--spacing-sm);

@@ -82,7 +82,7 @@
 </script>
 
 <div class="main-container">
-  <div class="page" class:docs-fullscreen={activeTab === "docs"}>
+  <div class="page" class:docs-fullscreen={activeTab === "docs" || activeTab === "bitacora" || activeTab === "summaries"}>
   <section class="panel">
     <h2>Zona indeleble</h2>
     <div class="tabs">
@@ -126,7 +126,12 @@
           <div class="metrics-grid">
           <div class="metric-card">
             <div class="metric-value">{dayToday?.sessions_count ?? 0}</div>
-            <div class="metric-label">Sesiones hoy</div>
+            <div class="metric-label">
+              Sesiones hoy
+              {#if currentSession?.actor?.user_id}
+                <span class="user-name">({currentSession.actor.user_id})</span>
+              {/if}
+            </div>
           </div>
           <div class="metric-card">
             <div class="metric-value">{metrics.total_sessions ?? 0}</div>

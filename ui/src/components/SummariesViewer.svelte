@@ -179,6 +179,8 @@
     gap: var(--spacing-md);
     height: 100%;
     overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .viewer-header {
@@ -217,6 +219,7 @@
     gap: var(--spacing-lg);
     flex: 1;
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
   }
 
@@ -232,7 +235,10 @@
     padding: var(--spacing-md);
     background: var(--color-surface);
     overflow-y: auto;
+    overflow-x: hidden;
     height: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .list-title {
@@ -299,7 +305,10 @@
     padding: var(--spacing-lg);
     background: var(--color-bg);
     overflow-y: auto;
+    overflow-x: hidden;
     height: 100%;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .content-wrapper {

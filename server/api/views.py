@@ -45,6 +45,7 @@ def _build_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "result": None,
                 "repo": event.get("repo"),
                 "project": event.get("project"),
+                "actor": event.get("actor"),
                 "started_after_close": event_type == "SessionStartedAfterDayClosed",
             }
         if event_type == "SessionEnded":

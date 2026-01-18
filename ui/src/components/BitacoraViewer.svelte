@@ -105,6 +105,8 @@
     gap: var(--spacing-md);
     height: 100%;
     overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .viewer-header {
@@ -151,6 +153,9 @@
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    max-width: 100%;
   }
 
   .loading-state,
