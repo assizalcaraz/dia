@@ -20,6 +20,11 @@ Este directorio contiene la documentación técnica de los componentes Svelte de
 - **[`DocTreeNode`](./DocTreeNode.md)** — Componente recursivo para árbol de documentación
 - **[`MarkdownRenderer`](./MarkdownRenderer.md)** — Renderizador de contenido markdown
 
+### Feature Board
+
+- **[`BoardView`](../ui/BoardView.md)** — Feature Board fullscreen con canvas interactivo
+- **[`BoardElement`](../ui/BoardView.md#boardelement)** — Componente para renderizar elementos del board
+
 ### Componente Principal
 
 - **[`App`](../App.md)** — Componente principal de la UI (ubicado en `ui/src/App.svelte`)
@@ -36,7 +41,9 @@ ui/src/
     ├── SummariesViewer.svelte
     ├── DocsViewer.svelte
     ├── DocTreeNode.svelte
-    └── MarkdownRenderer.svelte
+    ├── MarkdownRenderer.svelte
+    ├── BoardView.svelte    # Feature Board (v0.2)
+    └── BoardElement.svelte # Elementos del board (v0.2)
 ```
 
 ---
@@ -49,9 +56,11 @@ App.svelte
 │   └── MarkdownRenderer
 ├── SummariesViewer
 │   └── MarkdownRenderer
-└── DocsViewer
-    ├── DocTreeNode (recursivo)
-    └── MarkdownRenderer
+├── DocsViewer
+│   ├── DocTreeNode (recursivo)
+│   └── MarkdownRenderer
+└── BoardView (condicional)
+    └── BoardElement
 ```
 
 **Nota**: `MarkdownRenderer` es usado por múltiples componentes para renderizar contenido markdown.

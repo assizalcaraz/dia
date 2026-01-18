@@ -3,6 +3,7 @@
   import BitacoraViewer from "./components/BitacoraViewer.svelte";
   import SummariesViewer from "./components/SummariesViewer.svelte";
   import DocsViewer from "./components/DocsViewer.svelte";
+  import BoardView from "./components/BoardView.svelte";
 
   const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
@@ -17,6 +18,7 @@
   let loading = true;
   let today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
   let activeTab = "overview"; // overview, bitacora, summaries, docs
+  let boardOpen = false; // Control de visibilidad del board
 
   const fetchJson = async (path) => {
     const response = await fetch(`${API_BASE}${path}`);
@@ -79,6 +81,17 @@
     intervalId = setInterval(load, 5000);
     return () => clearInterval(intervalId);
   });
+
+  // Obtener ID del board (session_id o day_id)
+  $: boardId = currentSession?.session_id || today;
+
+  function openBoard() {
+    boardOpen = true;
+  }
+
+  function closeBoard() {
+    boardOpen = false;
+  }
 </script>
 
 <div class="main-container">
@@ -196,7 +209,16 @@
   </section>
 
   <section class="panel">
-    <h2>Zona viva</h2>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
+      <h2 style="margin: 0;">Zona viva</h2>
+      <button 
+        class="btn-open-board"
+        on:click={openBoard}
+        title="Abrir Feature Board"
+      >
+        Abrir Board
+      </button>
+    </div>
     <div class="tab-content">
       {#if loading}
       <div class="loading-state">
@@ -354,4 +376,8 @@
     </div>
   </section>
   </div>
+  
+  {#if boardOpen}
+    <BoardView boardId={boardId} onClose={closeBoard} />
+  {/if}
 </div>

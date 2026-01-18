@@ -36,6 +36,7 @@ from .utils import (
     read_text,
     write_text,
 )
+from .llm_analyzer import analyze_error_with_llm
 
 
 def _event_id() -> str:
@@ -182,6 +183,12 @@ def _cleanup_tasks(rules: dict[str, Any], files: list[str]) -> list[str]:
     if not tasks:
         tasks.append("Revisar cambios y consolidar docs si aplica")
     return tasks
+
+
+def _analyze_error_simple(content: str) -> str:
+    """Análisis simple de error cuando LLM no está disponible."""
+    from .llm_analyzer import _analyze_simple
+    return _analyze_simple(content, "error")
 
 
 def cmd_start(args: argparse.Namespace) -> int:
@@ -578,6 +585,23 @@ def cmd_cap(args: argparse.Namespace) -> int:
         print("Contenido vacio.", file=sys.stderr)
         return 1
 
+    # Generar título automáticamente si se usa --auto o si no se proporciona --title
+    title = args.title
+    if args.auto or (not title and args.kind == "error"):
+        print("Analizando error con LLM...", file=sys.stderr)
+        generated_title = analyze_error_with_llm(content, args.kind)
+        if generated_title:
+            title = generated_title
+            print(f"Título generado: {title}", file=sys.stderr)
+        else:
+            # Fallback: usar análisis simple
+            title = _analyze_error_simple(content)
+            print(f"Título generado (simple): {title}", file=sys.stderr)
+    
+    if not title:
+        print("Error: se requiere --title o usar --auto", file=sys.stderr)
+        return 1
+
     # Calcular hash
     error_hash = compute_content_hash(content)
 
@@ -609,7 +633,7 @@ def cmd_cap(args: argparse.Namespace) -> int:
     meta = {
         "capture_id": capture_id,
         "kind": args.kind,
-        "title": args.title,
+        "title": title,
         "content_hash": error_hash,
         "repo": {
             "path": str(repo_path),
@@ -649,7 +673,7 @@ def cmd_cap(args: argparse.Namespace) -> int:
                 "error_hash": error_hash,
                 "original_event_id": existing_capture.get("event_id"),
                 "artifact_ref": artifact_ref,
-                "title": args.title,
+                "title": title,
             },
             links=[{"kind": "artifact", "ref": artifact_ref}],
         )
@@ -663,7 +687,7 @@ def cmd_cap(args: argparse.Namespace) -> int:
             repo=repo_state,
             payload={
                 "kind": args.kind,
-                "title": args.title,
+                "title": title,
                 "error_hash": error_hash,
                 "artifact_ref": artifact_ref,
             },
@@ -747,7 +771,7 @@ def cmd_fix(args: argparse.Namespace) -> int:
             "error_event_id": error_event_id,
             "error_hash": error_hash,
             "fix_sha": fix_sha,
-            "title": args.title,
+            "title": title,
         },
     )
 
@@ -833,10 +857,27 @@ def build_parser() -> argparse.ArgumentParser:
         "cap", help="Captura error/log desde stdin", parents=[common]
     )
     cap_parser.add_argument("--kind", required=True, choices=["error", "log"], help="Tipo de captura")
-    cap_parser.add_argument("--title", required=True, help="Descripcion breve")
+    cap_parser.add_argument("--title", required=False, help="Descripcion breve (opcional si se usa --auto)")
+    cap_parser.add_argument("--auto", action="store_true", help="Generar título automáticamente con LLM")
     cap_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
     cap_parser.add_argument("--stdin", action="store_true", help="Leer desde stdin (default: auto-detect)")
     cap_parser.set_defaults(func=cmd_cap)
+    
+    # Alias corto "E" para capturar errores con auto-título
+    e_parser = subparsers.add_parser(
+        "E", help="Captura error con título automático (alias de 'cap --kind error --auto')", parents=[common]
+    )
+    e_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    e_parser.add_argument("--stdin", action="store_true", help="Leer desde stdin (default: auto-detect)")
+    
+    def cmd_e(args):
+        """Wrapper para cmd_cap con --kind error --auto"""
+        args.kind = 'error'
+        args.title = None
+        args.auto = True
+        return cmd_cap(args)
+    
+    e_parser.set_defaults(func=cmd_e)
 
     fix_parser = subparsers.add_parser(
         "fix", help="Linkea fix a error capturado", parents=[common]

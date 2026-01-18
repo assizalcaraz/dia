@@ -59,6 +59,7 @@ Documentación técnica de módulos y componentes del sistema.
   - [`DocsViewer`](modules/components/DocsViewer.md) — Visualizador de documentación
   - [`DocTreeNode`](modules/components/DocTreeNode.md) — Componente de árbol de documentación
   - [`MarkdownRenderer`](modules/components/MarkdownRenderer.md) — Renderizador de markdown
+  - [`BoardView`](modules/ui/BoardView.md) — Feature Board fullscreen (v0.2)
 
 ---
 
@@ -72,6 +73,7 @@ Guías específicas de cada comando y herramienta.
 - **[`dia close-day`](guides/dia-close-day.md)** — Cerrar jornada
 - **[`dia cap`](guides/dia-cap.md)** — Capturar errores/logs
 - **[`dia fix`](guides/dia-fix.md)** — Linkear fix a error
+- **[Tips: Usar dia durante desarrollo](guides/dia-desarrollo.md)** — Guía práctica para desarrolladores
 
 ---
 
