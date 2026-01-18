@@ -182,6 +182,15 @@ Los scopes están definidos en `data/rules.json` bajo `documentation_scopes`:
 }
 ```
 
+### Defaults vs Override Runtime
+
+El sistema de reglas usa un modelo de **defaults versionados + override runtime**:
+
+- **`cli/dia_cli/default_rules/rules.json`** (versionado en repo): Defaults del producto, incluye scopes, patrones sospechosos, políticas de commits, etc.
+- **`data_root/rules.json`** (runtime, no versionado): Override del usuario/proyecto que se mergea sobre los defaults.
+
+`load_rules()` hace merge profundo: el override gana sobre defaults, permitiendo personalización por proyecto sin tocar el repo. Esto habilita futuros "profiles" por proyecto manteniendo defaults estables.
+
 ---
 
 ## Notas Importantes
