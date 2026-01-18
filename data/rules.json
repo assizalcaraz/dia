@@ -1,9 +1,0 @@
-{
-  "protected_branches": ["main", "master", "production", "prod"],
-  "commit_tag": "[dia]",
-  "commit_types": ["feat", "fix", "refactor", "docs", "test", "chore", "wip"],
-  "suspicious_patterns": [
-    { "pattern": "docs/scratch/", "rule": "docs_scratch" },
-    { "pattern": "_test.py", "rule": "test_outside_tests" }
-  ]
-}
