@@ -2,88 +2,43 @@ import json
 from pathlib import Path
 from typing import Any
 
-DEFAULT_RULES: dict[str, Any] = {
-    "protected_branches": ["main", "master", "production", "prod"],
-    "commit_tag": "[dia]",
-    "commit_types": ["feat", "fix", "refactor", "docs", "test", "chore", "wip"],
-    "suspicious_patterns": [
-        {"pattern": "docs/scratch/", "rule": "docs_scratch"},
-        {"pattern": "_test.py", "rule": "test_outside_tests"},
-    ],
-    "documentation_scopes": {
-        "cli_commands": {
-            "description": "Documentación de comandos CLI",
-            "paths": [
-                "docs/guides/dia-*.md",
-                "docs/manual/CAPTURA_ERRORES.md",
-                "docs/modules/cli/*.md"
-            ],
-            "triggers": [
-                "cambios en cli/dia_cli/*.py",
-                "nuevos comandos CLI",
-                "cambios en argumentos de comandos",
-                "cambios en comportamiento de comandos"
-            ]
-        },
-        "ui_components": {
-            "description": "Documentación de componentes UI",
-            "paths": [
-                "docs/modules/components/*.md",
-                "docs/modules/ui/*.md"
-            ],
-            "triggers": [
-                "cambios en ui/src/components/*.svelte",
-                "nuevos componentes",
-                "cambios en props o comportamiento de componentes"
-            ]
-        },
-        "api_endpoints": {
-            "description": "Documentación de API",
-            "paths": [
-                "docs/modules/api/*.md",
-                "docs/guides/api-*.md"
-            ],
-            "triggers": [
-                "cambios en server/api/*.py",
-                "nuevos endpoints",
-                "cambios en estructura de respuestas"
-            ]
-        },
-        "workflows": {
-            "description": "Documentación de flujos de trabajo",
-            "paths": [
-                "docs/guides/*.md",
-                "docs/README.md"
-            ],
-            "triggers": [
-                "cambios en flujos documentados",
-                "nuevos workflows",
-                "actualizaciones de procesos"
-            ]
-        },
-        "architecture": {
-            "description": "Documentación de arquitectura y diseño",
-            "paths": [
-                "docs/overview/*.md",
-                "docs/specs/*.md",
-                "docs/RESUMEN_DISENO_DIA.md",
-                "docs/ESTADO_ACTUAL.md"
-            ],
-            "triggers": [
-                "cambios arquitectónicos significativos",
-                "nuevas decisiones de diseño",
-                "actualizaciones de estado del proyecto"
-            ]
-        }
-    }
-}
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """
+    Merge profundo: combina base y override recursivamente.
+    Si override tiene una clave, reemplaza base (o mergea si ambos son dicts).
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge(result[key], value)
+        else:
+            result[key] = value
+    return result
 
 
 def load_rules(path: Path) -> dict[str, Any]:
-    if not path.exists():
-        return DEFAULT_RULES
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    """
+    Carga reglas de gobernanza documental y repo:
+    1. Carga defaults desde cli/dia_cli/default_rules/rules.json (versionado)
+    2. Si existe path (data_root/rules.json), mergea (override del usuario)
+    3. Si no existe default, usa estructura mínima como fallback
+    """
+    # Cargar defaults versionados
+    default_rules_path = Path(__file__).parent / "default_rules" / "rules.json"
+    default_rules: dict[str, Any] = {}
+    if default_rules_path.exists():
+        with default_rules_path.open("r", encoding="utf-8") as handle:
+            default_rules = json.load(handle)
+    
+    # Cargar override del usuario si existe
+    if path.exists():
+        with path.open("r", encoding="utf-8") as handle:
+            override_rules = json.load(handle)
+            # Merge profundo: override gana sobre defaults
+            default_rules = _deep_merge(default_rules, override_rules)
+    
+    return default_rules
 
 
 def load_repo_structure_rules(data_root: Path) -> dict[str, Any]:
