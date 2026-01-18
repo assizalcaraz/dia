@@ -80,3 +80,11 @@ def changed_files_working(repo_path: Path) -> list[str]:
             continue
         files.update(line.strip() for line in output.splitlines() if line.strip())
     return sorted(files)
+
+
+def ls_tree(repo_path: Path, ref: str = "HEAD") -> str:
+    """Retorna salida de git ls-tree -r para obtener paths de archivos trackeados."""
+    try:
+        return run_git(repo_path, ["ls-tree", "-r", "--name-only", ref])
+    except RuntimeError:
+        return ""

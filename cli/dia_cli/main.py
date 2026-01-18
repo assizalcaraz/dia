@@ -21,11 +21,13 @@ from .git_ops import (
     head_sha,
     is_git_repo,
     log_oneline,
+    ls_tree,
+    run_git,
     status_porcelain,
     tracked_files_count,
 )
 from .ndjson import append_line
-from .rules import load_rules
+from .rules import load_rules, load_repo_structure_rules
 from .sessions import current_session, next_session_id
 from .templates import cierre_template, limpieza_template, session_start_template
 from .utils import (
@@ -213,7 +215,7 @@ def cmd_start(args: argparse.Namespace) -> int:
     if not args.mode:
         args.mode = input("Modo [it]: ").strip() or "it"
 
-    root = config.data_root(args.data_root)
+    root = config.data_root(args.data_root, repo_path=repo_path)
     config.ensure_data_dirs(root)
     sessions_path = _sessions_path(root)
     events_path = _events_path(root)
@@ -285,13 +287,31 @@ def cmd_start(args: argparse.Namespace) -> int:
     reminder_path = repo_path / ".cursorrules"
     write_reminder_to_file(reminder_path)
 
+    # Ejecutar repo-snapshot automáticamente (silencioso)
+    try:
+        snapshot_args = argparse.Namespace()
+        snapshot_args.repo = str(repo_path)
+        snapshot_args.data_root = args.data_root
+        snapshot_args.scope = "structure"
+        snapshot_args.actor = args.actor
+        snapshot_args.user_type = args.user_type
+        snapshot_args.role = args.role
+        snapshot_args.client = args.client
+        snapshot_args.project = args.project
+        snapshot_args.area = args.area
+        snapshot_args.context = args.context
+        cmd_repo_snapshot(snapshot_args)
+    except Exception as e:
+        # No fallar si el snapshot falla, solo loguear
+        print(f"Advertencia: no se pudo crear snapshot automático: {e}", file=sys.stderr)
+
     print(f"Sesion {session_id} iniciada. Bitacora: {bitacora_path}")
     return 0
 
 
 def cmd_pre_feat(args: argparse.Namespace) -> int:
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
-    root = config.data_root(args.data_root)
+    root = config.data_root(args.data_root, repo_path=repo_path)
     config.ensure_data_dirs(root)
     events_path = _events_path(root)
 
@@ -359,7 +379,7 @@ def cmd_pre_feat(args: argparse.Namespace) -> int:
 
 def cmd_end(args: argparse.Namespace) -> int:
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
-    root = config.data_root(args.data_root)
+    root = config.data_root(args.data_root, repo_path=repo_path)
     config.ensure_data_dirs(root)
     events_path = _events_path(root)
     sessions_path = _sessions_path(root)
@@ -453,6 +473,24 @@ def cmd_end(args: argparse.Namespace) -> int:
     limpieza_path.parent.mkdir(parents=True, exist_ok=True)
     write_text(cierre_path, cierre_template(session["day_id"], session_id, summary, [], "Revisar limpieza"))
     write_text(limpieza_path, limpieza_template(session["day_id"], session_id, tasks))
+    
+    # Ejecutar repo-audit automáticamente (silencioso)
+    try:
+        audit_args = argparse.Namespace()
+        audit_args.repo = str(repo_path)
+        audit_args.data_root = args.data_root
+        audit_args.against = "last"
+        audit_args.actor = args.actor
+        audit_args.user_type = args.user_type
+        audit_args.role = args.role
+        audit_args.client = args.client
+        audit_args.project = args.project
+        audit_args.area = args.area
+        audit_args.context = args.context
+        cmd_repo_audit(audit_args)
+    except Exception as e:
+        # No fallar si el audit falla, solo loguear
+        print(f"Advertencia: no se pudo ejecutar auditoría automática: {e}", file=sys.stderr)
     
     print(f"Sesion {session_id} cerrada. Bitacora jornada: {jornada_path}")
     return 0
@@ -562,7 +600,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
 def cmd_cap(args: argparse.Namespace) -> int:
     """Captura texto (logs/errores) y lo guarda como artifact + evento NDJSON."""
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
-    root = config.data_root(args.data_root)
+    root = config.data_root(args.data_root, repo_path=repo_path)
     config.ensure_data_dirs(root)
     events_path = _events_path(root)
 
@@ -763,7 +801,7 @@ def cmd_cap(args: argparse.Namespace) -> int:
 def cmd_fix(args: argparse.Namespace) -> int:
     """Linkea un fix a un error capturado."""
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
-    root = config.data_root(args.data_root)
+    root = config.data_root(args.data_root, repo_path=repo_path)
     config.ensure_data_dirs(root)
     events_path = _events_path(root)
 
@@ -814,6 +852,9 @@ def cmd_fix(args: argparse.Namespace) -> int:
     error_hash = target_capture.get("payload", {}).get("error_hash")
     error_event_id = target_capture.get("event_id")
 
+    # Generar fix_id único para referenciar este fix posteriormente
+    fix_id = f"fix_{uuid.uuid4().hex[:12]}"
+
     fix_event = _build_event(
         "FixLinked",
         session=session,
@@ -821,6 +862,7 @@ def cmd_fix(args: argparse.Namespace) -> int:
         project=project,
         repo=repo_state,
         payload={
+            "fix_id": fix_id,
             "error_event_id": error_event_id,
             "error_hash": error_hash,
             "fix_sha": fix_sha,
@@ -831,12 +873,378 @@ def cmd_fix(args: argparse.Namespace) -> int:
     append_line(events_path, fix_event)
 
     print(f"Fix linkeado a error: {error_hash[:8]}...")
+    print(f"Fix ID: {fix_id}")
     print(f"Error event_id: {error_event_id}")
     if fix_sha:
         print(f"Fix commit: {fix_sha}")
     else:
         print("Fix en working tree (aun sin commit)")
         print("Ejecuta 'dia pre-feat' para sugerir commit")
+        print(f"Luego usa 'dia fix-commit --fix {fix_id} --last' para linkear el commit")
+
+    return 0
+
+
+def cmd_fix_commit(args: argparse.Namespace) -> int:
+    """Linkea un fix a un commit específico."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    root = config.data_root(args.data_root, repo_path=repo_path)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+
+    # Determinar commit SHA
+    if args.last:
+        commit_sha = head_sha(repo_path)
+        if not commit_sha:
+            print("No hay commit HEAD en este repo.", file=sys.stderr)
+            return 1
+    elif args.commit:
+        commit_sha = args.commit
+        # Validar que el commit existe
+        try:
+            run_git(repo_path, ["rev-parse", "--verify", commit_sha])
+        except RuntimeError:
+            print(f"Commit {commit_sha} no encontrado en el repo.", file=sys.stderr)
+            return 1
+    else:
+        print("Error: se requiere --commit <sha> o --last", file=sys.stderr)
+        return 1
+
+    # Buscar el FixLinked por fix_id
+    events = list(read_json_lines(events_path))
+    fix_linked = None
+    for event in events:
+        if event.get("type") == "FixLinked":
+            payload = event.get("payload", {})
+            if payload.get("fix_id") == args.fix_id:
+                fix_linked = event
+                break
+
+    if not fix_linked:
+        print(f"Fix {args.fix_id} no encontrado.", file=sys.stderr)
+        return 1
+
+    # Obtener sesión: usar sesión activa si existe, sino usar la del FixLinked
+    current = current_session(events_path, repo_path=str(repo_path))
+    if current:
+        session_id = current["session"]["session_id"]
+        day_id_val = current["session"]["day_id"]
+    else:
+        # Usar sesión del FixLinked
+        fix_session = fix_linked.get("session", {})
+        session_id = fix_session.get("session_id")
+        day_id_val = fix_session.get("day_id")
+        if not session_id or not day_id_val:
+            print("No se pudo determinar sesión para el fix.", file=sys.stderr)
+            return 1
+
+    # Verificar que no esté ya linkeado
+    fix_event_id = fix_linked.get("event_id")
+    already_committed = any(
+        e.get("type") == "FixCommitted"
+        and e.get("payload", {}).get("fix_event_id") == fix_event_id
+        for e in events
+    )
+
+    if already_committed:
+        existing = next(
+            e for e in events
+            if e.get("type") == "FixCommitted"
+            and e.get("payload", {}).get("fix_event_id") == fix_event_id
+        )
+        existing_sha = existing.get("payload", {}).get("commit_sha")
+        print(f"Fix {args.fix_id} ya está linkeado al commit {existing_sha}")
+        return 0
+
+    # Construir evento FixCommitted
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    }
+    actor = _actor_from_args(args)
+    project = _project_from_args(args)
+    repo_state = _repo_payload(repo_path, current_branch(repo_path), None)
+
+    fix_committed_event = _build_event(
+        "FixCommitted",
+        session=session,
+        actor=actor,
+        project=project,
+        repo=repo_state,
+        payload={
+            "fix_event_id": fix_event_id,
+            "fix_id": args.fix_id,
+            "commit_sha": commit_sha,
+            "error_event_id": fix_linked.get("payload", {}).get("error_event_id"),
+        },
+    )
+
+    append_line(events_path, fix_committed_event)
+
+    print(f"Fix {args.fix_id} linkeado al commit {commit_sha}")
+    print(f"Error event_id: {fix_linked.get('payload', {}).get('error_event_id')}")
+    print(f"Commit SHA: {commit_sha}")
+
+    return 0
+
+
+def cmd_repo_snapshot(args: argparse.Namespace) -> int:
+    """Captura snapshot liviano de estructura del repo."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    if not is_git_repo(repo_path):
+        print("Repo invalido o no es git.", file=sys.stderr)
+        return 1
+
+    root = config.data_root(args.data_root, repo_path=repo_path)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+
+    # Verificar sesión activa (opcional, pero preferible)
+    current = current_session(events_path, repo_path=str(repo_path))
+    session_id = current["session"]["session_id"] if current else None
+    day_id_val = current["session"]["day_id"] if current else day_id()
+
+    # Capturar snapshot liviano
+    head = head_sha(repo_path)
+    tracked_paths = []
+    if head:
+        ls_tree_output = ls_tree(repo_path, head)
+        if ls_tree_output:
+            tracked_paths = [line.strip() for line in ls_tree_output.splitlines() if line.strip()]
+    
+    status_output = status_porcelain(repo_path)
+    status_lines = [line.strip() for line in status_output.splitlines() if line.strip()] if status_output else []
+
+    # Construir snapshot
+    snapshot_data = {
+        "timestamp": now_iso(),
+        "repo_path": str(repo_path),
+        "branch": current_branch(repo_path),
+        "head_sha": head,
+        "tracked_files": tracked_paths,
+        "status_porcelain": status_lines,
+        "scope": args.scope,
+    }
+
+    # Guardar artifact
+    from datetime import datetime
+    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    snapshot_dir = config.artifacts_dir(root) / "snapshots"
+    snapshot_dir.mkdir(parents=True, exist_ok=True)
+    snapshot_file = snapshot_dir / f"repo_structure_{timestamp_str}.json"
+    write_text(snapshot_file, json.dumps(snapshot_data, indent=2))
+
+    # Crear evento
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    } if session_id else {"day_id": day_id_val, "session_id": None}
+    
+    actor = _actor_from_args(args)
+    project = _project_from_args(args)
+    repo_state = _repo_payload(repo_path, current_branch(repo_path), head)
+
+    snapshot_event = _build_event(
+        "RepoSnapshotCreated",
+        session=session,
+        actor=actor,
+        project=project,
+        repo=repo_state,
+        payload={
+            "scope": args.scope,
+            "tracked_files_count": len(tracked_paths),
+            "status_lines_count": len(status_lines),
+        },
+        links=[{"kind": "artifact", "ref": str(snapshot_file.relative_to(root))}],
+    )
+
+    append_line(events_path, snapshot_event)
+
+    print(f"Snapshot creado: {snapshot_file.name}")
+    print(f"  Archivos trackeados: {len(tracked_paths)}")
+    print(f"  Líneas de status: {len(status_lines)}")
+    print(f"  Artifact: {snapshot_file}")
+
+    return 0
+
+
+def cmd_repo_audit(args: argparse.Namespace) -> int:
+    """Audita estructura del repo contra snapshot."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    if not is_git_repo(repo_path):
+        print("Repo invalido o no es git.", file=sys.stderr)
+        return 1
+
+    root = config.data_root(args.data_root, repo_path=repo_path)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+
+    # Verificar sesión activa
+    current = current_session(events_path, repo_path=str(repo_path))
+    session_id = current["session"]["session_id"] if current else None
+    day_id_val = current["session"]["day_id"] if current else day_id()
+
+    # Cargar snapshot
+    snapshot_dir = config.artifacts_dir(root) / "snapshots"
+    snapshot_file = None
+    
+    if args.against == "last":
+        # Buscar último snapshot
+        snapshots = sorted(snapshot_dir.glob("repo_structure_*.json"), reverse=True)
+        if not snapshots:
+            print("No hay snapshots disponibles. Ejecuta 'dia repo-snapshot' primero.", file=sys.stderr)
+            return 1
+        snapshot_file = snapshots[0]
+    else:
+        # Buscar por ID/timestamp
+        snapshot_file = snapshot_dir / f"repo_structure_{args.against}.json"
+        if not snapshot_file.exists():
+            # Intentar sin extensión
+            snapshot_file = snapshot_dir / f"repo_structure_{args.against}"
+            if not snapshot_file.exists():
+                print(f"Snapshot {args.against} no encontrado.", file=sys.stderr)
+                return 1
+
+    # Leer snapshot
+    snapshot_data = json.loads(read_text(snapshot_file))
+    snapshot_tracked = set(snapshot_data.get("tracked_files", []))
+    snapshot_status = set(snapshot_data.get("status_porcelain", []))
+
+    # Capturar estado actual
+    head = head_sha(repo_path)
+    current_tracked = set()
+    if head:
+        ls_tree_output = ls_tree(repo_path, head)
+        if ls_tree_output:
+            current_tracked = set(line.strip() for line in ls_tree_output.splitlines() if line.strip())
+    
+    status_output = status_porcelain(repo_path)
+    current_status = set(line.strip() for line in status_output.splitlines() if line.strip()) if status_output else set()
+
+    # Detectar cambios
+    new_files = current_tracked - snapshot_tracked
+    removed_files = snapshot_tracked - current_tracked
+    modified_files = set()
+    for status_line in current_status:
+        # git status --porcelain: XY path
+        # X = staged, Y = working tree
+        # M = modified, A = added, D = deleted, etc.
+        if len(status_line) >= 3:
+            status_code = status_line[:2]
+            file_path = status_line[3:].strip()
+            if "M" in status_code or "A" in status_code:
+                modified_files.add(file_path)
+
+    # Cargar reglas
+    structure_rules = load_repo_structure_rules(root)
+    rules = structure_rules.get("rules", [])
+
+    # Aplicar reglas y generar eventos
+    violations = []
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    } if session_id else {"day_id": day_id_val, "session_id": None}
+    
+    actor = _actor_from_args(args)
+    project = _project_from_args(args)
+    repo_state = _repo_payload(repo_path, current_branch(repo_path), head)
+
+    # Regla 1: En raíz solo README.md como .md
+    root_md_rule = next((r for r in rules if r.get("id") == "root_only_readme"), None)
+    if root_md_rule:
+        root_md_files = [f for f in current_tracked if f.endswith(".md") and "/" not in f and f != "README.md"]
+        if root_md_files:
+            for md_file in root_md_files:
+                violation_event = _build_event(
+                    "UnexpectedFileInRootDetected",
+                    session=session,
+                    actor=actor,
+                    project=project,
+                    repo=repo_state,
+                    payload={
+                        "file": md_file,
+                        "rule_id": root_md_rule.get("id"),
+                        "suggestion": "Mover a docs_temp/ y clasificar",
+                    },
+                )
+                append_line(events_path, violation_event)
+                violations.append(violation_event)
+
+    # Regla 2: .md fuera de docs/ es sospechoso
+    suspicious_md_rule = next((r for r in rules if r.get("id") == "suspicious_md_outside_docs"), None)
+    if suspicious_md_rule:
+        suspicious_files = [
+            f for f in current_tracked
+            if f.endswith(".md") and not f.startswith("docs/") and f != "README.md" and "/" in f
+        ]
+        if suspicious_files:
+            for md_file in suspicious_files:
+                violation_event = _build_event(
+                    "SuspiciousFileDetected",
+                    session=session,
+                    actor=actor,
+                    project=project,
+                    repo=repo_state,
+                    payload={
+                        "file": md_file,
+                        "rule_id": suspicious_md_rule.get("id"),
+                        "suggestion": "Revisar y proponer mover/copy a docs_temp/",
+                    },
+                )
+                append_line(events_path, violation_event)
+                violations.append(violation_event)
+
+    # Regla 3: Cambios en docs/ → alerta
+    docs_touched_rule = next((r for r in rules if r.get("id") == "docs_touched_alert"), None)
+    if docs_touched_rule:
+        docs_modified = [f for f in modified_files if f.startswith("docs/")]
+        if docs_modified:
+            violation_event = _build_event(
+                "DocsTouched",
+                session=session,
+                actor=actor,
+                project=project,
+                repo=repo_state,
+                payload={
+                    "files": docs_modified,
+                    "rule_id": docs_touched_rule.get("id"),
+                    "severity": "info",
+                    "suggestion": "Revisar cambios en Zona Indeleble",
+                },
+            )
+            append_line(events_path, violation_event)
+            violations.append(violation_event)
+
+    # Crear evento de resumen
+    audit_event = _build_event(
+        "RepoAuditCompleted",
+        session=session,
+        actor=actor,
+        project=project,
+        repo=repo_state,
+        payload={
+            "snapshot_file": str(snapshot_file.relative_to(root)),
+            "violations_count": len(violations),
+            "new_files_count": len(new_files),
+            "removed_files_count": len(removed_files),
+            "modified_files_count": len(modified_files),
+        },
+    )
+    append_line(events_path, audit_event)
+
+    # Mostrar resultados
+    print(f"Auditoría completada contra snapshot: {snapshot_file.name}")
+    print(f"  Violaciones detectadas: {len(violations)}")
+    print(f"  Archivos nuevos: {len(new_files)}")
+    print(f"  Archivos eliminados: {len(removed_files)}")
+    print(f"  Archivos modificados: {len(modified_files)}")
+    
+    if violations:
+        print("\n  Violaciones:")
+        for v in violations:
+            payload = v.get("payload", {})
+            print(f"    - {v.get('type')}: {payload.get('file', payload.get('files', 'N/A'))}")
 
     return 0
 
@@ -906,6 +1314,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     summarize_parser.set_defaults(func=cmd_summarize)
 
+    repo_snapshot_parser = subparsers.add_parser(
+        "repo-snapshot", help="Captura snapshot de estructura del repo", parents=[common]
+    )
+    repo_snapshot_parser.add_argument(
+        "--scope", choices=["structure"], default="structure", help="Alcance del snapshot"
+    )
+    repo_snapshot_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    repo_snapshot_parser.set_defaults(func=cmd_repo_snapshot)
+
+    repo_audit_parser = subparsers.add_parser(
+        "repo-audit", help="Audita estructura del repo contra snapshot", parents=[common]
+    )
+    repo_audit_parser.add_argument(
+        "--against", default="last", help="Snapshot ID o 'last' para el último (default: last)"
+    )
+    repo_audit_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    repo_audit_parser.set_defaults(func=cmd_repo_audit)
+
     cap_parser = subparsers.add_parser(
         "cap", help="Captura error/log desde stdin", parents=[common]
     )
@@ -961,6 +1387,16 @@ def build_parser() -> argparse.ArgumentParser:
     fix_parser.add_argument("--title", required=True, help="Descripcion del fix")
     fix_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
     fix_parser.set_defaults(func=cmd_fix)
+
+    fix_commit_parser = subparsers.add_parser(
+        "fix-commit", help="Linkea fix a commit SHA", parents=[common]
+    )
+    fix_commit_parser.add_argument("--fix", dest="fix_id", required=True, help="Fix ID (ej: fix_abc123)")
+    fix_commit_group = fix_commit_parser.add_mutually_exclusive_group(required=True)
+    fix_commit_group.add_argument("--commit", help="SHA del commit")
+    fix_commit_group.add_argument("--last", action="store_true", help="Usar HEAD del repo actual")
+    fix_commit_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    fix_commit_parser.set_defaults(func=cmd_fix_commit)
 
     update_parser = subparsers.add_parser(
         "update", help="Reinstala la CLI en modo editable"

@@ -1,10 +1,66 @@
 <script>
   import { marked } from "marked";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { createEventDispatcher } from "svelte";
 
   export let content = "";
+  export let basePath = ""; // Ruta base del documento actual para resolver enlaces relativos
+
+  const dispatch = createEventDispatcher();
 
   let htmlContent = "";
+  let containerElement = null;
+
+  // Función para resolver rutas relativas a rutas absolutas
+  const resolvePath = (href, currentPath) => {
+    // Si es un enlace absoluto o externo, no hacer nada
+    if (href.startsWith("http://") || href.startsWith("https://") || href.startsWith("//") || href.startsWith("mailto:")) {
+      return null; // Dejar que el navegador maneje enlaces externos
+    }
+
+    // Si es solo un fragmento (empieza con #), no es un enlace a documento
+    if (href.startsWith("#")) {
+      return null;
+    }
+
+    // Remover fragmento (#) y query string (?) si existen
+    const pathWithoutFragment = href.split("#")[0].split("?")[0];
+
+    // Verificar si es un archivo .md (puede estar en cualquier parte de la ruta)
+    if (!pathWithoutFragment.includes(".md")) {
+      return null;
+    }
+
+    // Si es una ruta absoluta (empieza con /)
+    if (pathWithoutFragment.startsWith("/")) {
+      // Remover el / inicial y retornar
+      return pathWithoutFragment.substring(1);
+    }
+
+    // Si no hay basePath, no podemos resolver rutas relativas
+    if (!currentPath) {
+      return null;
+    }
+
+    // Resolver ruta relativa
+    const currentDir = currentPath.split("/").slice(0, -1).join("/");
+    const parts = pathWithoutFragment.split("/").filter(p => p !== "");
+    let resolved = currentDir ? currentDir.split("/").filter(p => p !== "") : [];
+
+    for (const part of parts) {
+      if (part === ".") {
+        continue;
+      } else if (part === "..") {
+        if (resolved.length > 0) {
+          resolved.pop();
+        }
+      } else {
+        resolved.push(part);
+      }
+    }
+
+    return resolved.join("/");
+  };
 
   $: if (content) {
     try {
@@ -16,9 +72,43 @@
       htmlContent = `<p class="error">Error al renderizar markdown: ${error.message}</p>`;
     }
   }
+
+  // Interceptar clics en enlaces después de renderizar
+  const handleLinkClick = (event) => {
+    const link = event.target.closest("a");
+    if (!link) return;
+
+    const href = link.getAttribute("href");
+    if (!href) return;
+
+    // Resolver ruta si es un enlace a .md
+    const resolvedPath = resolvePath(href, basePath);
+    if (resolvedPath !== null) {
+      event.preventDefault();
+      dispatch("docLink", { path: resolvedPath });
+      return;
+    }
+
+    // Para otros enlaces, dejar que el navegador maneje (pero prevenir navegación si es relativo)
+    if (!href.startsWith("http://") && !href.startsWith("https://") && !href.startsWith("//") && !href.startsWith("#")) {
+      event.preventDefault();
+    }
+  };
+
+  onMount(() => {
+    if (containerElement) {
+      containerElement.addEventListener("click", handleLinkClick);
+    }
+  });
+
+  onDestroy(() => {
+    if (containerElement) {
+      containerElement.removeEventListener("click", handleLinkClick);
+    }
+  });
 </script>
 
-<div class="markdown-content">
+<div class="markdown-content" bind:this={containerElement}>
   {@html htmlContent}
 </div>
 

@@ -71,9 +71,11 @@ Guías específicas de cada comando y herramienta.
 - **[`dia pre-feat`](guides/dia-pre-feat.md)** — Checkpoint pre-feat
 - **[`dia end`](guides/dia-end.md)** — Cerrar sesión
 - **[`dia close-day`](guides/dia-close-day.md)** — Cerrar jornada
-- **[`dia cap`](guides/dia-cap.md)** — Capturar errores/logs
+- **[`dia E`](guides/dia-desarrollo.md#capturar-errores)** — Capturar error con título automático (comando corto)
+- **[`dia cap`](guides/dia-cap.md)** — Capturar errores/logs (comando completo)
 - **[`dia fix`](guides/dia-fix.md)** — Linkear fix a error
 - **[Tips: Usar dia durante desarrollo](guides/dia-desarrollo.md)** — Guía práctica para desarrolladores
+- **[Scopes de Documentación](guides/documentacion-scopes.md)** — Guía para actualizar documentación según cambios
 
 ---
 

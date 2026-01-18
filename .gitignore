@@ -60,3 +60,12 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# /dia data (Opción B: fuera del repo)
+data/
+.dia/
+
+# Artifacts y runtime
+artifacts/
+__pycache__/
+*.pyc

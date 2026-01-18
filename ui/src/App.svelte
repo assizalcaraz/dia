@@ -7,6 +7,7 @@
   import SessionObjectives from "./components/SessionObjectives.svelte";
   import BitacoraEditor from "./components/BitacoraEditor.svelte";
   import TemporalNotesViewer from "./components/TemporalNotesViewer.svelte";
+  import ErrorFixCommitChain from "./components/ErrorFixCommitChain.svelte";
 
   const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
@@ -428,6 +429,9 @@
           <p class="muted">Cargando...</p>
         </div>
       {:else if zonaVivaTab === "sesion"}
+        {#if currentSession}
+          <ErrorFixCommitChain apiBase={API_BASE} />
+        {/if}
         <SessionObjectives session={currentSession} />
         {#if currentSession}
           <div class="card session-card">

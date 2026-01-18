@@ -22,5 +22,6 @@ urlpatterns = [
     path("notes/tmp/<str:day_id>/<str:file_name>", views.notes_tmp_content, name="notes_tmp_content"),
     path("captures/recent/", views.captures_recent, name="captures_recent"),
     path("captures/errors/open/", views.errors_open, name="errors_open"),
+    path("chain/latest/", views.chain_latest, name="chain_latest"),
     path("endpoints.md", views.endpoints_doc, name="endpoints_doc"),
 ]

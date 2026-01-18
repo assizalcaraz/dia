@@ -57,6 +57,7 @@ Panel derecho que muestra:
 - `BitacoraViewer`: Componente para visualizar bitácoras
 - `SummariesViewer`: Componente para visualizar resúmenes
 - `DocsViewer`: Componente para visualizar documentación
+- `BoardView`: Componente para Feature Board fullscreen (condicional, se muestra cuando `boardOpen` es `true`)
 
 ---
 
@@ -89,6 +90,7 @@ Panel derecho que muestra:
 - `today`: ID del día actual (formato `YYYY-MM-DD`)
 - `activeTab`: Tab activo en zona indeleble (`"overview"`, `"bitacora"`, `"summaries"`, `"docs"`)
 - `zonaVivaElement`: Referencia al contenedor de zona viva (para preservar scroll)
+- `boardOpen`: Control de visibilidad del Feature Board
 
 ---
 
@@ -136,5 +138,6 @@ Panel derecho que muestra:
 - [BitacoraViewer](./components/BitacoraViewer.md) — Componente de bitácoras
 - [SummariesViewer](./components/SummariesViewer.md) — Componente de resúmenes
 - [DocsViewer](./components/DocsViewer.md) — Componente de documentación
+- [BoardView](./ui/BoardView.md) — Componente de Feature Board
 - [ALTERNATIVAS_REFRESH.md](./ui/ALTERNATIVAS_REFRESH.md) — Documentación sobre el sistema de actualización incremental
 - [Documentación de API](./api/endpoints.md) — Endpoints de la API

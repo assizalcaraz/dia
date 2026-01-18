@@ -171,6 +171,117 @@ El store se suscribe automáticamente a cambios en `boardState` y guarda en loca
 
 ---
 
+## BoardElement
+
+**Ubicación**: `ui/src/components/BoardElement.svelte`  
+**Versión**: v0.2.0 (Fase 1)  
+**Estado**: Implementado
+
+Componente Svelte que renderiza elementos individuales del board en el canvas.
+
+---
+
+### Props
+
+- `element` (object, requerido): Objeto del elemento a renderizar
+- `viewport` (object, requerido): Viewport actual con posición y zoom
+
+---
+
+### Funcionalidad
+
+1. **Renderizado de elementos**: Muestra elementos según su tipo con iconos y estilos específicos
+2. **Transformación de coordenadas**: Calcula posición y tamaño según viewport (zoom y pan)
+3. **Soporte de imágenes**: Renderiza imágenes si el elemento tiene `imageData`
+4. **Tags**: Muestra tags del elemento si están disponibles
+5. **Variantes por tipo**: Estilos diferentes según tipo (note, task, session, error, custom)
+
+---
+
+### Tipos de Elementos Soportados
+
+- `note` (📝): Notas generales
+- `task` (✓): Tareas
+- `session` (📅): Sesiones
+- `error` (⚠️): Errores
+- `custom` (📦): Elementos personalizados
+
+---
+
+### Estructura del Elemento
+
+```typescript
+{
+  id: string;
+  type: 'note' | 'task' | 'session' | 'error' | 'custom';
+  position: { x: number; y: number };
+  size: { width: number; height: number };
+  zIndex?: number;
+  content: {
+    title: string;
+    body?: string;
+    data?: {
+      imageData?: string; // Base64 o URL
+    };
+  };
+  metadata?: {
+    tags?: string[];
+  };
+}
+```
+
+---
+
+### Transformación de Coordenadas
+
+El componente calcula automáticamente la posición y tamaño transformados según el viewport:
+
+```javascript
+transformedX = (element.position.x + viewport.x) * viewport.zoom
+transformedY = (element.position.y + viewport.y) * viewport.zoom
+transformedWidth = element.size.width * viewport.zoom
+transformedHeight = element.size.height * viewport.zoom
+```
+
+---
+
+### Estados Reactivos
+
+- `transformedX`, `transformedY`: Posición transformada según viewport
+- `transformedWidth`, `transformedHeight`: Tamaño transformado según zoom
+- `hasImage`: Indica si el elemento tiene imagen
+- `imageData`: Datos de la imagen (si existe)
+
+---
+
+### Estilos
+
+Cada tipo de elemento tiene un borde izquierdo de color distintivo:
+
+- `note`: Borde estándar
+- `task`: Borde verde (#4caf50)
+- `session`: Borde azul (#2196f3)
+- `error`: Borde rojo (#f44336)
+- `custom`: Borde gris
+
+---
+
+### Limitaciones Actuales (Fase 1)
+
+- ❌ No es arrastrable (drag & drop en Fase 2)
+- ❌ No tiene interacción de click/edición
+- ❌ No muestra conexiones con otros elementos
+- ❌ No tiene tooltips o información adicional
+
+---
+
+### Referencias
+
+- [BoardView](./BoardView.md) - Componente padre que usa BoardElement
+- [PLAN_ACTUALIZACION_ZONA_VIVA.md](./PLAN_ACTUALIZACION_ZONA_VIVA.md) - Plan completo del Feature Board
+
+---
+
 ## Referencias
 
 - [PLAN_ACTUALIZACION_ZONA_VIVA.md](./PLAN_ACTUALIZACION_ZONA_VIVA.md) - Plan completo del Feature Board
@@ -179,4 +290,4 @@ El store se suscribe automáticamente a cambios en `boardState` y guarda en loca
 
 ---
 
-**Última actualización**: 2026-01-17
+**Última actualización**: 2026-01-18

@@ -1,36 +1,32 @@
-# /dia — Reglas de workflow para Cursor
+# Recordatorio: Workflow /dia para Cursor
 
-## Convención de commits
+## Commits de Cursor/IA
 
-**Commits de Cursor/IA** (cuando haces commits por el usuario):
-- SIEMPRE usar: `git-commit-cursor -m "🦾 tipo: mensaje"`
-- El emoji 🦾 va AL INICIO del mensaje para identificación rápida
-- NO incluir `[dia]` en el mensaje (confunde)
-- Formato: `🦾 feat: descripción [#sesion Sxx]` o `🦾 fix: descripción`
-
-**Autoría automática**: `git-commit-cursor` usa `Cursor Assistant <cursor@dia.local>` automáticamente.
-
-**Commits manuales del usuario**: El usuario usa `git -M "mensaje"` (sin emoji, su autoría normal).
-
-## Workflow /dia
-
-Cuando el usuario trabaja con `/dia`:
-- `dia start`: inicia sesión, captura baseline
-- `dia pre-feat`: sugiere commit con formato correcto (usa `git-commit-cursor`)
-- `dia end`: cierra sesión, genera bitácora
-
-**NO ejecutar commits automáticamente**: Solo sugerir con `dia pre-feat`, el usuario decide.
-
-## Identificación en git log
-
-- `Cursor Assistant <cursor@dia.local>` + 🦾 = commit de Cursor/IA
-- Autoría del usuario + sin 🦾 = commit manual
-
-## Recordatorio
-
-Si el usuario te pide hacer un commit, usa SIEMPRE:
+SIEMPRE usar cuando hagas commits:
 ```bash
 git-commit-cursor -m "🦾 tipo: mensaje"
 ```
 
-NO uses `git commit` directamente.
+**Formato del mensaje**:
+- 🦾 al INICIO (identificación rápida en git log)
+- NO incluir `[dia]` (confunde)
+- Ejemplo: `🦾 feat: agregar validación de datos [#sesion S01]`
+
+**Autoría automática**: `Cursor Assistant <cursor@dia.local>`
+
+## Commits manuales del usuario
+
+El usuario usa: `git -M "mensaje"` (sin emoji, su autoría normal)
+
+## Identificación en git log
+
+- `Cursor Assistant <cursor@dia.local>` + 🦾 = commit de Cursor
+- Autoría del usuario + sin 🦾 = commit manual
+
+## Workflow /dia
+
+- `dia start`: inicia sesión
+- `dia pre-feat`: sugiere commit (usa `git-commit-cursor`)
+- `dia end`: cierra sesión
+
+NO ejecutar commits automáticamente, solo sugerir.

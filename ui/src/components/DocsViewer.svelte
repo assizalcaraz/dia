@@ -212,7 +212,7 @@
                 {/each}
               </div>
             {/if}
-            <MarkdownRenderer content={content} />
+            <MarkdownRenderer content={content} basePath={selectedDoc} on:docLink={(e) => loadDocContent(e.detail.path)} />
           </div>
         {:else}
           <div class="empty-state">

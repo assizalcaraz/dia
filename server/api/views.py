@@ -511,6 +511,84 @@ def errors_open(request):
     return JsonResponse({"errors": result})
 
 
+def chain_latest(request):
+    """Retorna la última cadena abierta Error→Fix→Commit de la sesión actual."""
+    events = _read_events()
+    
+    # Encontrar sesión activa
+    sessions_list = _build_sessions(events)
+    sessions_list.sort(key=lambda item: item.get("start_ts") or "", reverse=True)
+    current_session_data = None
+    for item in sessions_list:
+        if item.get("end_ts") is None:
+            current_session_data = item
+            break
+    
+    if not current_session_data:
+        return JsonResponse({"error": None, "fix": None, "commit": None})
+    
+    session_id = current_session_data.get("session_id")
+    
+    # Buscar último error sin fix (CaptureCreated)
+    captures = []
+    for event in events:
+        if event.get("type") == "CaptureCreated":
+            event_session_id = event.get("session", {}).get("session_id")
+            if event_session_id == session_id:
+                captures.append(event)
+    
+    if not captures:
+        return JsonResponse({"error": None, "fix": None, "commit": None})
+    
+    # Ordenar por timestamp y tomar el más reciente
+    captures.sort(key=lambda x: x.get("ts", ""), reverse=True)
+    latest_capture = captures[0]
+    error_event_id = latest_capture.get("event_id")
+    
+    # Buscar FixLinked asociado
+    fix_linked = None
+    for event in events:
+        if event.get("type") == "FixLinked":
+            if event.get("payload", {}).get("error_event_id") == error_event_id:
+                fix_linked = event
+                break
+    
+    # Buscar FixCommitted asociado
+    fix_committed = None
+    if fix_linked:
+        fix_event_id = fix_linked.get("event_id")
+        for event in events:
+            if event.get("type") == "FixCommitted":
+                if event.get("payload", {}).get("fix_event_id") == fix_event_id:
+                    fix_committed = event
+                    break
+    
+    # Construir respuesta
+    result = {
+        "error": {
+            "event_id": latest_capture.get("event_id"),
+            "ts": latest_capture.get("ts"),
+            "title": latest_capture.get("payload", {}).get("title"),
+            "error_hash": latest_capture.get("payload", {}).get("error_hash"),
+            "artifact_ref": latest_capture.get("payload", {}).get("artifact_ref"),
+        } if latest_capture else None,
+        "fix": {
+            "fix_id": fix_linked.get("payload", {}).get("fix_id"),
+            "event_id": fix_linked.get("event_id"),
+            "ts": fix_linked.get("ts"),
+            "title": fix_linked.get("payload", {}).get("title"),
+            "fix_sha": fix_linked.get("payload", {}).get("fix_sha"),
+        } if fix_linked else None,
+        "commit": {
+            "commit_sha": fix_committed.get("payload", {}).get("commit_sha"),
+            "event_id": fix_committed.get("event_id"),
+            "ts": fix_committed.get("ts"),
+        } if fix_committed else None,
+    }
+    
+    return JsonResponse(result)
+
+
 def summaries_list(request, day_id: str):
     """Lista resúmenes disponibles para un día específico."""
     summaries_dir = Path(settings.DATA_ROOT) / "artifacts" / "summaries" / day_id
