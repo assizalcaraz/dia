@@ -366,7 +366,7 @@
             {/each}
           {:else}
             <div class="empty-state">
-              <p class="muted">Sin resúmenes rolling. Ejecuta 'dia summarize --mode rolling' para generar.</p>
+              <p class="muted">Sin resúmenes rolling. Ejecuta 'dia summary rolling' para generar.</p>
             </div>
           {/if}
           </div>
@@ -470,7 +470,7 @@
           <div style="margin-top: 1rem;">
             <button 
               class="btn-regenerate"
-              onclick="alert('Comando sugerido:\ndia summarize --scope day --mode rolling')"
+              onclick="alert('Comando sugerido:\ndia summary rolling')"
               title="Muestra comando para regenerar resumen"
             >
               Regenerar ahora
@@ -478,7 +478,7 @@
           </div>
         {:else}
           <div class="empty-state">
-            <p class="muted">No hay resumen rolling. Ejecuta 'dia summarize --mode rolling' para generar.</p>
+            <p class="muted">No hay resumen rolling. Ejecuta 'dia summary rolling' para generar.</p>
           </div>
         {/if}
         <h3>Errores abiertos</h3>
@@ -660,7 +660,7 @@
         </div>
       {:else}
         <div class="empty-state">
-          <p class="muted">No hay sesión activa. Iniciá con <code>dia start</code>.</p>
+          <p class="muted">No hay sesión activa. Iniciá con <code>dia session start</code>.</p>
         </div>
       {/if}
     </div>
