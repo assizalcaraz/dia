@@ -21,15 +21,23 @@ Panel izquierdo que muestra:
 
 ### Zona viva
 
-Panel derecho que muestra:
-- **Sesión activa**: Información de la sesión actual
-- **Sesiones de hoy**: Lista de sesiones del día con duración
-- **Checklist diario**: Lista de verificación
-- **Último resumen rolling**: Estado actual y próximo paso
-- **Errores abiertos**: Lista de errores sin fix con tooltips interactivos
-  - Tooltips con información detallada del error
-  - Botón de copiar (📋) para copiar información del error al portapapeles
-  - Tooltip permanece visible con delay y fade out suave
+Panel derecho con sistema de tabs que muestra:
+
+**Tab "Sesión"** (por defecto):
+- **Cadena Error/Fix/Commit**: Visualización de la última cadena abierta
+- **Objetivos de sesión**: Intent y DoD de la sesión activa
+- **Información de sesión**: Repositorio, branch, session_id
+
+**Tab "Bitácora"**:
+- **Editor de bitácora diaria**: Permite editar secciones 1 y 2 (editables)
+- **Visualización de sección automática**: Muestra sección 3 (read-only)
+- **Auto-guardado**: Guarda automáticamente después de 2 segundos sin escribir
+
+**Tab "Objetivos"**:
+- **Objetivos de sesión**: Intent y DoD de la sesión activa (vista enfocada)
+
+**Tab "Notas Temporales"** (solo si hay notas):
+- **Visualizador de notas temporales**: Lista y contenido de notas del día
 
 ---
 
@@ -54,9 +62,13 @@ Panel derecho que muestra:
 
 ## Dependencias
 
-- `BitacoraViewer`: Componente para visualizar bitácoras
+- `BitacoraViewer`: Componente para visualizar bitácoras (zona indeleble)
+- `BitacoraEditor`: Componente para editar bitácoras diarias (zona viva, tab "Bitácora")
 - `SummariesViewer`: Componente para visualizar resúmenes
 - `DocsViewer`: Componente para visualizar documentación
+- `SessionObjectives`: Componente para mostrar objetivos de sesión
+- `TemporalNotesViewer`: Componente para visualizar notas temporales
+- `ErrorFixCommitChain`: Componente para visualizar cadena Error→Fix→Commit
 - `BoardView`: Componente para Feature Board fullscreen (condicional, se muestra cuando `boardOpen` es `true`)
 
 ---
@@ -88,7 +100,8 @@ Panel derecho que muestra:
 - `dayToday`: Información del día actual
 - `loading`: Estado de carga (solo usado en carga inicial)
 - `today`: ID del día actual (formato `YYYY-MM-DD`)
-- `activeTab`: Tab activo en zona indeleble (`"overview"`, `"bitacora"`, `"summaries"`, `"docs"`)
+- `activeTab`: Tab activo en zona indeleble (`"overview"`, `"bitacora"`, `"summaries"`, `"docs"`, `"sessions"`)
+- `zonaVivaTab`: Tab activo en zona viva (`"sesion"`, `"bitacora"`, `"objetivos"`, `"temporales"`)
 - `zonaVivaElement`: Referencia al contenedor de zona viva (para preservar scroll)
 - `boardOpen`: Control de visibilidad del Feature Board
 

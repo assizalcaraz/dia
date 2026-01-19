@@ -631,37 +631,82 @@
         </button>
       {/if}
     </div>
+    <div class="tabs">
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "sesion"}
+        on:click={() => (zonaVivaTab = "sesion")}
+      >
+        Sesión
+      </button>
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "bitacora"}
+        on:click={() => (zonaVivaTab = "bitacora")}
+      >
+        Bitácora
+      </button>
+      <button
+        class="tab-button"
+        class:active={zonaVivaTab === "objetivos"}
+        on:click={() => (zonaVivaTab = "objetivos")}
+      >
+        Objetivos
+      </button>
+      {#if temporalNotesCount > 0}
+        <button
+          class="tab-button"
+          class:active={zonaVivaTab === "temporales"}
+          on:click={() => (zonaVivaTab = "temporales")}
+        >
+          Notas Temporales ({temporalNotesCount})
+        </button>
+      {/if}
+    </div>
     <div class="tab-content zona-viva-content" bind:this={zonaVivaElement}>
       {#if loading}
         <div class="loading-state">
           <p class="muted">Cargando...</p>
         </div>
-      {:else if currentSession}
-        <ErrorFixCommitChain apiBase={API_BASE} />
+      {:else if zonaVivaTab === "sesion"}
+        {#if currentSession}
+          <ErrorFixCommitChain apiBase={API_BASE} />
+          <SessionObjectives session={currentSession} />
+          <div class="card session-card">
+            <div class="card-header">
+              <div class="mono session-id">
+                {currentSession.day_id} {currentSession.session_id}
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="session-details">
+                <div class="detail-item">
+                  <span class="detail-label">Repo:</span>
+                  <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
+                </div>
+                <div class="detail-item">
+                  <span class="detail-label">Branch:</span>
+                  <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        {:else}
+          <div class="empty-state">
+            <p class="muted">No hay sesión activa. Iniciá con <code>dia start</code>.</p>
+          </div>
+        {/if}
+      {:else if zonaVivaTab === "bitacora"}
+        <BitacoraEditor apiBase={API_BASE} dayId={today} />
+      {:else if zonaVivaTab === "objetivos"}
         <SessionObjectives session={currentSession} />
-        <div class="card session-card">
-          <div class="card-header">
-            <div class="mono session-id">
-              {currentSession.day_id} {currentSession.session_id}
-            </div>
+        {#if !currentSession}
+          <div class="empty-state">
+            <p class="muted">No hay sesión activa para mostrar objetivos.</p>
           </div>
-          <div class="card-body">
-            <div class="session-details">
-              <div class="detail-item">
-                <span class="detail-label">Repo:</span>
-                <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Branch:</span>
-                <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      {:else}
-        <div class="empty-state">
-          <p class="muted">No hay sesión activa. Iniciá con <code>dia start</code>.</p>
-        </div>
+        {/if}
+      {:else if zonaVivaTab === "temporales"}
+        <TemporalNotesViewer apiBase={API_BASE} dayId={today} />
       {/if}
     </div>
   </section>
