@@ -135,12 +135,15 @@
 - **`dia_server/settings.py`**: Configuración básica
   - SQLite como base de datos
   - CORS habilitado para desarrollo
-  - `DATA_ROOT` configurable via env var
+  - `DATA_ROOT` usa Opción B2 (misma lógica que CLI)
+    - Prioridad: `DIA_DATA_ROOT` env var > data global según OS
+    - Data global: macOS `~/Library/Application Support/dia/`, Linux `~/.local/share/dia/`, Windows `%APPDATA%/dia/`
   - Timezone: `America/Argentina/Buenos_Aires`
 
 - **`api/views.py`** (~650 líneas): Múltiples endpoints
   - `sessions()`: Lista todas las sesiones
-  - `current_session()`: Sesión activa actual
+  - `current_session()`: Sesión activa actual (sin `end_ts`)
+  - `active_session()`: Sesión activa (no paused), usa claves compuestas para distinguir sesiones en diferentes repos
   - `events_recent()`: Eventos recientes (limit configurable)
   - `metrics()`: Estadísticas básicas
   - `chain_latest()`: Cadena Error→Fix→Commit de sesión actual (nuevo en v0.1.1)
@@ -585,9 +588,12 @@
 - **Rules**: `data/rules.json` existe con configuración básica
 - **Repo Structure Rules**: `cli/dia_cli/default_rules/repo_structure.json` (versionado) + override en `data_root/rules/repo_structure.json` (nuevo en v0.1.1)
 - **Data root**: Migrado a Opción B2 (nuevo en v0.1.1)
-  - Auto-detección de `.dia/` por proyecto
+  - Auto-detección de `.dia/` por proyecto (CLI)
   - Fallback a data global según OS (macOS: `~/Library/Application Support/dia/`, Linux: `~/.local/share/dia/`, Windows: `%APPDATA%/dia/`)
   - `--data-root` siempre gana (soberanía explícita)
+  - **Servidor Django**: Ahora usa misma lógica que CLI (alineado en 2026-01-19)
+    - `DIA_DATA_ROOT` env var > data global según OS
+    - Docker: monta data global como volumen y configura `DIA_DATA_ROOT=/data-global`
 - **Environment**: No hay archivo `.env` o configuración de entorno documentada
 
 ---

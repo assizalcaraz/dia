@@ -1,7 +1,7 @@
 # Documentación de Endpoints API
 
 **Versión**: v0.1  
-**Última actualización**: 2026-01-18
+**Última actualización**: 2026-01-19
 
 Esta documentación describe todos los endpoints disponibles en la API Django de `/dia`.
 
@@ -79,6 +79,80 @@ Retorna la sesión activa actual (sin `end_ts`).
 **Notas**:
 - Retorna `{"session": null}` si no hay sesión activa
 - Solo retorna la sesión más reciente sin `end_ts`
+
+---
+
+### `GET /api/session/active/`
+
+Retorna la sesión activa (no paused) o `None`.
+
+**Respuesta**:
+```json
+{
+  "session": {
+    "day_id": "2026-01-19",
+    "session_id": "S01",
+    "intent": "Test inicial de plantilla",
+    "dod": "Correcta configuracion de vistas, endpoints, API, paths, urls",
+    "mode": "it",
+    "start_ts": "2026-01-19T11:15:11-03:00",
+    "end_ts": null,
+    "result": null,
+    "repo": {
+      "path": "/Users/joseassizalcarazbaxter/Developer/revista_trinchera",
+      "vcs": "git",
+      "branch": "main",
+      "start_sha": null,
+      "end_sha": null,
+      "dirty": false
+    },
+    "project": {
+      "tag": "revista_trinchera",
+      "area": "it",
+      "context": ""
+    },
+    "actor": {
+      "user_id": "u_local",
+      "user_type": "human",
+      "role": "director",
+      "client": "cli"
+    },
+    "started_after_close": false
+  }
+}
+```
+
+**Lógica de detección**:
+- Una sesión está activa si:
+  - Tiene `SessionStarted` o `SessionStartedAfterDayClosed`
+  - No tiene `SessionEnded` ni `SessionForceClosed`
+  - No tiene `SessionPaused`, o tiene `SessionPaused` pero también tiene `SessionResumed` más reciente
+- Usa claves compuestas (`session_id:repo_path`) para distinguir sesiones con el mismo ID en diferentes repositorios
+- Si hay múltiples sesiones activas, retorna la más reciente y agrega advertencia en `anomalies`
+
+**Notas**:
+- Retorna `{"session": null}` si no hay sesión activa
+- Diferencia de `/api/sessions/current/`: este endpoint excluye sesiones pausadas
+- Si hay sesión sin `end_ts` y `day_id != today`, la marca como anomalía pero no la oculta
+- Respuesta puede incluir campo `anomalies` con advertencias (ej: múltiples sesiones activas)
+
+**Ejemplo con anomalías**:
+```json
+{
+  "session": {
+    "day_id": "2026-01-19",
+    "session_id": "S01",
+    ...
+  },
+  "anomalies": [
+    {
+      "type": "multiple_active_sessions",
+      "count": 2,
+      "sessions": ["S01", "S02"]
+    }
+  ]
+}
+```
 
 ---
 
@@ -622,4 +696,20 @@ Los errores retornan:
 
 ---
 
-**Última actualización**: 2026-01-18
+## Configuración de Data Root
+
+El servidor Django usa la misma lógica que el CLI para determinar `DATA_ROOT` (Opción B2):
+
+1. **Soberanía explícita**: Si `DIA_DATA_ROOT` está definido como variable de entorno, se usa esa ruta
+2. **Data global según OS**: Si no, usa el directorio global según el sistema operativo:
+   - **macOS**: `~/Library/Application Support/dia/`
+   - **Linux**: `~/.local/share/dia/` (o `$XDG_DATA_HOME/dia/` si está definido)
+   - **Windows**: `%APPDATA%/dia/` (o `~/AppData/Roaming/dia/`)
+
+Esto asegura que el servidor y el CLI lean desde la misma ubicación de datos, permitiendo que la UI muestre correctamente las sesiones activas.
+
+**Nota**: En Docker, el `docker-compose.yml` monta el directorio global como volumen y configura `DIA_DATA_ROOT=/data-global` para mantener consistencia.
+
+---
+
+**Última actualización**: 2026-01-19
