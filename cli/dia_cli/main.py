@@ -28,7 +28,7 @@ from .git_ops import (
 )
 from .ndjson import append_line
 from .rules import load_rules, load_repo_structure_rules
-from .sessions import current_session, next_session_id
+from .sessions import active_session, current_session, next_session_id
 from .templates import cierre_template, limpieza_template, session_start_template
 from .utils import (
     compute_content_hash,
@@ -194,6 +194,26 @@ def _analyze_error_simple(content: str) -> str:
     return _analyze_simple(content, "error")
 
 
+def cmd_session_start(args: argparse.Namespace) -> int:
+    """Inicia una sesión. Crea day_id si no existe."""
+    return cmd_start(args)
+
+
+def cmd_session_end(args: argparse.Namespace) -> int:
+    """Cierra la sesión activa. NO genera nightly automáticamente."""
+    return cmd_end(args)
+
+
+def cmd_session_pause(args: argparse.Namespace) -> int:
+    """Pausa la sesión activa."""
+    return cmd_pause(args)
+
+
+def cmd_session_resume(args: argparse.Namespace) -> int:
+    """Reanuda una sesión pausada."""
+    return cmd_resume(args)
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
     project_name = args.project or repo_path.name
@@ -219,6 +239,14 @@ def cmd_start(args: argparse.Namespace) -> int:
     config.ensure_data_dirs(root)
     sessions_path = _sessions_path(root)
     events_path = _events_path(root)
+
+    # Validar que no haya sesión activa (no paused)
+    active = active_session(events_path)
+    if active:
+        session_id_active = active.get("session", {}).get("session_id", "N/A")
+        print(f"Error: Ya hay una sesión activa: {session_id_active}", file=sys.stderr)
+        print("Sugerencia: Ejecuta 'dia end' para cerrar la sesión activa o 'dia pause' para pausarla.", file=sys.stderr)
+        return 1
 
     # Verificar si el día está cerrado
     current_day = day_id()
@@ -496,8 +524,194 @@ def cmd_end(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_close_day(args: argparse.Namespace) -> int:
-    """Cierra la jornada (ritual humano). Solo registra evento DayClosed."""
+def cmd_pause(args: argparse.Namespace) -> int:
+    """Pausa la sesión activa actual."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    root = config.data_root(args.data_root, repo_path=repo_path)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    sessions_path = _sessions_path(root)
+
+    current = current_session(events_path, repo_path=str(repo_path))
+    if not current:
+        print("No hay sesion activa o pausada para este repo.", file=sys.stderr)
+        return 1
+
+    # Verificar que la sesión esté activa (no paused)
+    active = active_session(events_path, repo_path=str(repo_path))
+    if not active:
+        print("La sesión actual ya está pausada.", file=sys.stderr)
+        return 1
+
+    session_id = current["session"]["session_id"]
+    session = {
+        "day_id": current["session"]["day_id"],
+        "session_id": session_id,
+    }
+
+    pause_event = _build_event(
+        "SessionPaused",
+        session=session,
+        actor=_actor_from_args(args),
+        project=_project_from_args(args),
+        repo=None,
+        payload={
+            "cmd": "dia pause",
+            "reason": args.reason or None,
+        },
+    )
+    append_line(events_path, pause_event)
+    append_line(sessions_path, pause_event)
+
+    # Actualizar bitácora
+    jornada_path = config.bitacora_dir(root) / f"{session['day_id']}.md"
+    from .utils import append_to_jornada_auto_section
+    reason_text = f" — {args.reason}" if args.reason else ""
+    pause_info = f"- {now_iso()} — SessionPaused{reason_text}\n"
+    append_to_jornada_auto_section(jornada_path, pause_info)
+
+    print(f"Sesion {session_id} pausada.")
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Reanuda una sesión pausada."""
+    repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
+    root = config.data_root(args.data_root, repo_path=repo_path)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    sessions_path = _sessions_path(root)
+
+    current = current_session(events_path, repo_path=str(repo_path))
+    if not current:
+        print("No hay sesion activa o pausada para este repo.", file=sys.stderr)
+        return 1
+
+    # Verificar que la sesión esté paused (no activa)
+    active = active_session(events_path, repo_path=str(repo_path))
+    if active:
+        print("La sesión actual ya está activa (no está pausada).", file=sys.stderr)
+        return 1
+
+    session_id = current["session"]["session_id"]
+    session = {
+        "day_id": current["session"]["day_id"],
+        "session_id": session_id,
+    }
+
+    resume_event = _build_event(
+        "SessionResumed",
+        session=session,
+        actor=_actor_from_args(args),
+        project=_project_from_args(args),
+        repo=None,
+        payload={
+            "cmd": "dia resume",
+        },
+    )
+    append_line(events_path, resume_event)
+    append_line(sessions_path, resume_event)
+
+    # Actualizar bitácora
+    jornada_path = config.bitacora_dir(root) / f"{session['day_id']}.md"
+    from .utils import append_to_jornada_auto_section
+    resume_info = f"- {now_iso()} — SessionResumed\n"
+    append_to_jornada_auto_section(jornada_path, resume_info)
+
+    print(f"Sesion {session_id} reanudada.")
+    return 0
+
+
+def cmd_day_status(args: argparse.Namespace) -> int:
+    """Muestra el estado del día actual."""
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    day = day_id()
+    
+    # Leer eventos del día
+    events = list(read_json_lines(events_path))
+    day_events = [e for e in events if e.get("session", {}).get("day_id") == day]
+    
+    # Verificar si está cerrado
+    day_closed = any(e.get("type") == "DayClosed" for e in day_events)
+    
+    # Buscar sesiones activas/pausadas
+    active_sessions = []
+    paused_sessions = []
+    
+    sessions: dict[str, dict[str, Any]] = {}
+    for event in day_events:
+        event_type = event.get("type")
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event["session"]["session_id"]
+            sessions[session_id] = {
+                "started": event,
+                "ended": None,
+                "paused": None,
+                "resumed": None,
+            }
+        if event_type == "SessionEnded":
+            session_id = event["session"]["session_id"]
+            if session_id in sessions:
+                sessions[session_id]["ended"] = event
+        if event_type == "SessionPaused":
+            session_id = event["session"]["session_id"]
+            if session_id in sessions:
+                sessions[session_id]["paused"] = event
+        if event_type == "SessionResumed":
+            session_id = event["session"]["session_id"]
+            if session_id in sessions:
+                sessions[session_id]["resumed"] = event
+    
+    for session_id, entry in sessions.items():
+        if entry["ended"] is None:  # Sesión no terminada
+            # Verificar si está paused
+            is_paused = False
+            if entry["paused"]:
+                if not entry["resumed"]:
+                    is_paused = True
+                else:
+                    paused_ts = entry["paused"].get("ts", "")
+                    resumed_ts = entry["resumed"].get("ts", "")
+                    if paused_ts > resumed_ts:
+                        is_paused = True
+            
+            session_info = {
+                "session_id": session_id,
+                "start_ts": entry["started"].get("ts"),
+                "repo": entry["started"].get("repo", {}).get("path", "N/A"),
+                "intent": entry["started"].get("session", {}).get("intent", ""),
+            }
+            
+            if is_paused:
+                paused_sessions.append(session_info)
+            else:
+                active_sessions.append(session_info)
+    
+    # Mostrar estado
+    print(f"Día: {day}")
+    print(f"Estado: {'Cerrado' if day_closed else 'Abierto'}")
+    print(f"\nSesiones activas: {len(active_sessions)}")
+    for s in active_sessions:
+        print(f"  - {s['session_id']}: {s['repo']} (inicio: {s['start_ts']})")
+        if s['intent']:
+            print(f"    Intent: {s['intent']}")
+    
+    print(f"\nSesiones pausadas: {len(paused_sessions)}")
+    for s in paused_sessions:
+        print(f"  - {s['session_id']}: {s['repo']} (inicio: {s['start_ts']})")
+        if s['intent']:
+            print(f"    Intent: {s['intent']}")
+    
+    if not active_sessions and not paused_sessions:
+        print("\nNo hay sesiones activas o pausadas.")
+    
+    return 0
+
+
+def cmd_day_close(args: argparse.Namespace) -> int:
+    """Cierra la jornada (ritual humano). Valida que no haya sesiones activas/pausadas y genera summary nightly."""
     root = config.data_root(args.data_root)
     config.ensure_data_dirs(root)
     events_path = _events_path(root)
@@ -511,6 +725,36 @@ def cmd_close_day(args: argparse.Namespace) -> int:
     if already_closed:
         print(f"Jornada {day} ya está cerrada.", file=sys.stderr)
         return 1
+    
+    # Validar que no haya sesiones activas o pausadas
+    active = active_session(events_path)
+    current = current_session(events_path)
+    
+    if active or current:
+        session_id = (active or current).get("session", {}).get("session_id", "N/A")
+        print(f"Error: Hay sesión activa o pausada: {session_id}", file=sys.stderr)
+        print("Sugerencia: Ejecuta 'dia session end' para cerrar todas las sesiones antes de cerrar el día.", file=sys.stderr)
+        return 1
+    
+    # Generar summary nightly antes de cerrar
+    if not getattr(args, 'skip_summary', False):
+        print(f"Generando summary nightly para {day}...")
+        summary_args = argparse.Namespace()
+        summary_args.data_root = args.data_root
+        summary_args.day_id = day
+        summary_args.mode = "nightly"
+        summary_args.actor = args.actor
+        summary_args.user_type = args.user_type
+        summary_args.role = args.role
+        summary_args.client = args.client
+        summary_args.project = args.project
+        summary_args.area = args.area
+        summary_args.context = args.context
+        summary_args.force = True  # Permitir nightly aunque el día no esté cerrado aún
+        
+        result = cmd_summary_nightly(summary_args)
+        if result != 0:
+            print("Advertencia: No se pudo generar summary nightly, pero continuando con cierre del día.", file=sys.stderr)
     
     # Registrar evento DayClosed
     close_event = _build_event(
@@ -532,12 +776,16 @@ def cmd_close_day(args: argparse.Namespace) -> int:
         append_to_jornada_auto_section(jornada_path, close_mark)
     
     print(f"Jornada {day} cerrada. Evento DayClosed registrado.")
-    print("Nota: Para generar resúmenes, ejecuta 'dia summarize --mode rolling' o 'dia summarize --mode nightly'")
     return 0
 
 
-def cmd_summarize(args: argparse.Namespace) -> int:
-    """Genera resumen regenerable (rolling o nightly)."""
+def cmd_close_day(args: argparse.Namespace) -> int:
+    """Alias legacy para cmd_day_close."""
+    return cmd_day_close(args)
+
+
+def cmd_summary_rolling(args: argparse.Namespace) -> int:
+    """Genera resumen rolling (estado liviano incremental para sesión activa)."""
     from .summaries import extract_objective, generate_summary
     
     root = config.data_root(args.data_root)
@@ -546,6 +794,12 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     
     # Determinar día
     day_id_val = args.day_id if args.day_id else day_id()
+    
+    # Verificar que haya sesión activa
+    active = active_session(events_path)
+    if not active:
+        print("Error: No hay sesión activa. Rolling summary requiere sesión activa.", file=sys.stderr)
+        return 1
     
     # Leer eventos del día
     events = list(read_json_lines(events_path))
@@ -566,7 +820,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     summary_data = generate_summary(
         root=root,
         day_id_val=day_id_val,
-        mode=args.mode,
+        mode="rolling",
         events=day_events,
         objective=objective,
         summaries_path=summaries_path,
@@ -587,14 +841,97 @@ def cmd_summarize(args: argparse.Namespace) -> int:
     append_line(summaries_path, event)
     append_line(events_path, event)
     
-    print(f"Resumen {args.mode} generado para {day_id_val}")
+    print(f"Resumen rolling generado para {day_id_val}")
     print(f"Assessment: {summary_data['payload']['assessment']}")
     print(f"Próximo paso: {summary_data['payload']['next_step']}")
     if summary_data['payload'].get('blocker'):
         print(f"Blocker: {summary_data['payload']['blocker']}")
-    print(f"Artefacto: {summary_data['payload']['links'][0]['ref']}")
+    if summary_data['payload'].get('links'):
+        print(f"Artefacto: {summary_data['payload']['links'][0]['ref']}")
     
     return 0
+
+
+def cmd_summary_nightly(args: argparse.Namespace) -> int:
+    """Genera resumen nightly (informe largo consolidado del día)."""
+    from .summaries import extract_objective, generate_summary
+    
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    
+    # Determinar día
+    day_id_val = args.day_id if args.day_id else day_id()
+    
+    # Leer eventos del día
+    events = list(read_json_lines(events_path))
+    day_events = [e for e in events if e.get("session", {}).get("day_id") == day_id_val]
+    
+    if not day_events:
+        print(f"No hay eventos registrados para {day_id_val}.", file=sys.stderr)
+        return 1
+    
+    # Verificar si el día está cerrado (a menos que se use --force)
+    day_closed = any(e.get("type") == "DayClosed" for e in day_events)
+    if not day_closed and not getattr(args, 'force', False):
+        print(f"Advertencia: Día {day_id_val} no está cerrado.", file=sys.stderr)
+        print("Sugerencia: Ejecuta 'dia day close' primero, o usa --force para forzar.", file=sys.stderr)
+        confirm = input("¿Continuar de todas formas? (escriba 'si' para confirmar): ").strip().lower()
+        if confirm not in {"si", "s", "yes", "y"}:
+            return 1
+    
+    # Leer bitácora para extraer objetivo
+    jornada_path = config.bitacora_dir(root) / f"{day_id_val}.md"
+    objective = extract_objective(jornada_path)
+    
+    # Ruta del índice de resúmenes (summaries.ndjson)
+    summaries_path = config.index_dir(root) / "summaries.ndjson"
+    
+    # Generar resumen
+    summary_data = generate_summary(
+        root=root,
+        day_id_val=day_id_val,
+        mode="nightly",
+        events=day_events,
+        objective=objective,
+        summaries_path=summaries_path,
+    )
+    
+    # Construir evento completo
+    event = _build_event(
+        summary_data["event_type"],
+        session=summary_data["session"],
+        actor=summary_data["actor"],
+        project=summary_data["project"],
+        repo=summary_data["repo"],
+        payload=summary_data["payload"],
+        links=summary_data["links"],
+    )
+    
+    # Guardar en índice y events
+    append_line(summaries_path, event)
+    append_line(events_path, event)
+    
+    print(f"Resumen nightly generado para {day_id_val}")
+    print(f"Assessment: {summary_data['payload']['assessment']}")
+    print(f"Próximo paso: {summary_data['payload']['next_step']}")
+    if summary_data['payload'].get('blocker'):
+        print(f"Blocker: {summary_data['payload']['blocker']}")
+    if summary_data['payload'].get('links'):
+        print(f"Artefacto: {summary_data['payload']['links'][0]['ref']}")
+    
+    return 0
+
+
+def cmd_summarize(args: argparse.Namespace) -> int:
+    """Alias legacy para cmd_summary_rolling o cmd_summary_nightly según --mode."""
+    if args.mode == "rolling":
+        return cmd_summary_rolling(args)
+    elif args.mode == "nightly":
+        return cmd_summary_nightly(args)
+    else:
+        print(f"Modo inválido: {args.mode}", file=sys.stderr)
+        return 1
 
 
 def cmd_cap(args: argparse.Namespace) -> int:
@@ -1153,7 +1490,13 @@ def cmd_repo_audit(args: argparse.Namespace) -> int:
     # Regla 1: En raíz solo README.md como .md
     root_md_rule = next((r for r in rules if r.get("id") == "root_only_readme"), None)
     if root_md_rule:
-        root_md_files = [f for f in current_tracked if f.endswith(".md") and "/" not in f and f != "README.md"]
+        root_md_files = [
+            f for f in current_tracked 
+            if f.endswith(".md") 
+            and "/" not in f 
+            and f != "README.md"
+            and not f.startswith("node_modules/")  # Excluir node_modules (aunque no debería estar en raíz)
+        ]
         if root_md_files:
             for md_file in root_md_files:
                 violation_event = _build_event(
@@ -1172,12 +1515,28 @@ def cmd_repo_audit(args: argparse.Namespace) -> int:
                 violations.append(violation_event)
 
     # Regla 2: .md fuera de docs/ es sospechoso
+    # Permite README.md en raíz del proyecto y en raíz de módulos/herramientas (cli/, server/, ui/, etc.)
     suspicious_md_rule = next((r for r in rules if r.get("id") == "suspicious_md_outside_docs"), None)
     if suspicious_md_rule:
-        suspicious_files = [
-            f for f in current_tracked
-            if f.endswith(".md") and not f.startswith("docs/") and f != "README.md" and "/" in f
-        ]
+        suspicious_files = []
+        for f in current_tracked:
+            if not f.endswith(".md"):
+                continue
+            if f.startswith("docs/"):
+                continue
+            if f == "README.md":  # Raíz del proyecto
+                continue
+            if f.startswith("node_modules/") or "node_modules/" in f:
+                continue
+            # Permitir README.md en raíz de módulos/herramientas (primer nivel)
+            # Ej: cli/README.md, server/README.md, ui/README.md
+            if "/" in f:
+                parts = f.split("/")
+                if len(parts) == 2 and parts[1] == "README.md":
+                    # Es un README.md en un subdirectorio de primer nivel (módulo/herramienta)
+                    continue
+            # Cualquier otro .md fuera de docs/ es sospechoso
+            suspicious_files.append(f)
         if suspicious_files:
             for md_file in suspicious_files:
                 violation_event = _build_event(
@@ -1274,8 +1633,87 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
+    # Namespace: session
+    session_parser = subparsers.add_parser(
+        "session", help="Gestión de sesiones", parents=[common]
+    )
+    session_subparsers = session_parser.add_subparsers(dest="session_command", required=True)
+    
+    session_start_parser = session_subparsers.add_parser(
+        "start", help="Inicia sesión (crea day_id si no existe)", parents=[common]
+    )
+    session_start_parser.add_argument("--repo", required=False)
+    session_start_parser.add_argument("--intent", required=False)
+    session_start_parser.add_argument("--dod", required=False)
+    session_start_parser.add_argument("--mode", default=None)
+    session_start_parser.set_defaults(func=cmd_session_start)
+    
+    session_end_parser = session_subparsers.add_parser(
+        "end", help="Cierra sesión activa (NO genera nightly)", parents=[common]
+    )
+    session_end_parser.add_argument("--repo", required=False)
+    session_end_parser.set_defaults(func=cmd_session_end)
+    
+    session_pause_parser = session_subparsers.add_parser(
+        "pause", help="Pausa sesión activa", parents=[common]
+    )
+    session_pause_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    session_pause_parser.add_argument("--reason", required=False, help="Razón de la pausa (opcional)")
+    session_pause_parser.set_defaults(func=cmd_session_pause)
+    
+    session_resume_parser = session_subparsers.add_parser(
+        "resume", help="Reanuda sesión pausada", parents=[common]
+    )
+    session_resume_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    session_resume_parser.set_defaults(func=cmd_session_resume)
+
+    # Namespace: day
+    day_parser = subparsers.add_parser(
+        "day", help="Gestión de días/jornadas", parents=[common]
+    )
+    day_subparsers = day_parser.add_subparsers(dest="day_command", required=True)
+    
+    day_status_parser = day_subparsers.add_parser(
+        "status", help="Muestra estado del día actual", parents=[common]
+    )
+    day_status_parser.set_defaults(func=cmd_day_status)
+    
+    day_close_parser = day_subparsers.add_parser(
+        "close", help="Cierra jornada (valida sesiones activas y genera nightly)", parents=[common]
+    )
+    day_close_parser.add_argument(
+        "--skip-summary", action="store_true", help="Omitir generación automática de summary nightly"
+    )
+    day_close_parser.set_defaults(func=cmd_day_close)
+
+    # Namespace: summary
+    summary_parser = subparsers.add_parser(
+        "summary", help="Generación de resúmenes", parents=[common]
+    )
+    summary_subparsers = summary_parser.add_subparsers(dest="summary_command", required=True)
+    
+    summary_rolling_parser = summary_subparsers.add_parser(
+        "rolling", help="Resumen rolling (estado liviano incremental para sesión activa)", parents=[common]
+    )
+    summary_rolling_parser.add_argument(
+        "--day-id", help="Día específico (default: día actual)"
+    )
+    summary_rolling_parser.set_defaults(func=cmd_summary_rolling)
+    
+    summary_nightly_parser = summary_subparsers.add_parser(
+        "nightly", help="Resumen nightly (informe largo consolidado del día)", parents=[common]
+    )
+    summary_nightly_parser.add_argument(
+        "--day-id", help="Día específico (default: día actual)"
+    )
+    summary_nightly_parser.add_argument(
+        "--force", action="store_true", help="Forzar generación aunque el día no esté cerrado"
+    )
+    summary_nightly_parser.set_defaults(func=cmd_summary_nightly)
+
+    # Aliases legacy (mantener compatibilidad)
     start_parser = subparsers.add_parser(
-        "start", help="Inicia sesion", parents=[common]
+        "start", help="[LEGACY] Alias de 'dia session start'", parents=[common]
     )
     start_parser.add_argument("--repo", required=False)
     start_parser.add_argument("--intent", required=False)
@@ -1283,25 +1721,35 @@ def build_parser() -> argparse.ArgumentParser:
     start_parser.add_argument("--mode", default=None)
     start_parser.set_defaults(func=cmd_start)
 
-    pre_feat_parser = subparsers.add_parser(
-        "pre-feat", help="Checkpoint pre-feat", parents=[common]
-    )
-    pre_feat_parser.add_argument("--repo", required=False)
-    pre_feat_parser.set_defaults(func=cmd_pre_feat)
-
     end_parser = subparsers.add_parser(
-        "end", help="Cierra sesion", parents=[common]
+        "end", help="[LEGACY] Alias de 'dia session end'", parents=[common]
     )
     end_parser.add_argument("--repo", required=False)
     end_parser.set_defaults(func=cmd_end)
 
+    pause_parser = subparsers.add_parser(
+        "pause", help="[LEGACY] Alias de 'dia session pause'", parents=[common]
+    )
+    pause_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    pause_parser.add_argument("--reason", required=False, help="Razón de la pausa (opcional)")
+    pause_parser.set_defaults(func=cmd_pause)
+
+    resume_parser = subparsers.add_parser(
+        "resume", help="[LEGACY] Alias de 'dia session resume'", parents=[common]
+    )
+    resume_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
+    resume_parser.set_defaults(func=cmd_resume)
+
     close_day_parser = subparsers.add_parser(
-        "close-day", help="Cierra jornada (ritual humano)", parents=[common]
+        "close-day", help="[LEGACY] Alias de 'dia day close'", parents=[common]
+    )
+    close_day_parser.add_argument(
+        "--skip-summary", action="store_true", help="Omitir generación automática de summary nightly"
     )
     close_day_parser.set_defaults(func=cmd_close_day)
 
     summarize_parser = subparsers.add_parser(
-        "summarize", help="Genera resumen regenerable", parents=[common]
+        "summarize", help="[LEGACY] Genera resumen regenerable (usar 'dia summary rolling' o 'dia summary nightly')", parents=[common]
     )
     summarize_parser.add_argument(
         "--scope", choices=["day"], default="day", help="Alcance del resumen (v0: solo day)"
@@ -1313,6 +1761,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--day-id", help="Día específico (default: día actual)"
     )
     summarize_parser.set_defaults(func=cmd_summarize)
+
+    pre_feat_parser = subparsers.add_parser(
+        "pre-feat", help="Checkpoint pre-feat", parents=[common]
+    )
+    pre_feat_parser.add_argument("--repo", required=False)
+    pre_feat_parser.set_defaults(func=cmd_pre_feat)
 
     repo_snapshot_parser = subparsers.add_parser(
         "repo-snapshot", help="Captura snapshot de estructura del repo", parents=[common]

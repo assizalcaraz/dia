@@ -21,7 +21,7 @@
   let dayToday = null; // Información del día actual
   let loading = true; // Solo para carga inicial
   let today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-  let activeTab = "overview"; // overview, bitacora, summaries, docs
+  let activeTab = "overview"; // overview, bitacora, summaries, docs, sessions
   let zonaVivaTab = "sesion"; // sesion, bitacora, objetivos, temporales
   let boardOpen = false; // Control de visibilidad del board
   let zonaVivaElement = null; // Referencia al contenedor de zona viva para preservar scroll
@@ -48,10 +48,10 @@
   const load = async () => {
     loading = true;
     try {
-      const [sessionsRes, currentRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes] =
+      const [sessionsRes, activeRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes] =
         await Promise.all([
           fetchJson("/sessions/"),
-          fetchJson("/sessions/current/"),
+          fetchJson("/session/active/"),
           fetchJson("/summaries/"),
           fetchJson(`/summaries/latest/?day_id=${today}&mode=rolling`),
           fetchJson(`/summaries/?day_id=${today}&mode=rolling&limit=20`),
@@ -60,7 +60,7 @@
           fetchJson("/day/today/"),
         ]);
       sessions = sessionsRes.sessions || [];
-      currentSession = currentRes.session;
+      currentSession = activeRes.session;
       summaries = summariesRes.summaries || [];
       latestRollingSummary = latestRes.summary;
       rollingTimeline = timelineRes.summaries || [];
@@ -80,10 +80,10 @@
     const scrollTop = zonaVivaElement?.scrollTop || 0;
     
     try {
-      const [sessionsRes, currentRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes, temporalNotesRes] =
+      const [sessionsRes, activeRes, summariesRes, latestRes, timelineRes, metricsRes, errorsRes, dayTodayRes, temporalNotesRes] =
         await Promise.all([
           fetchJson("/sessions/"),
-          fetchJson("/sessions/current/"),
+          fetchJson("/session/active/"),
           fetchJson("/summaries/"),
           fetchJson(`/summaries/latest/?day_id=${today}&mode=rolling`),
           fetchJson(`/summaries/?day_id=${today}&mode=rolling&limit=20`),
@@ -95,7 +95,7 @@
       
       // Actualizar datos sin causar parpadeo
       sessions = sessionsRes.sessions || [];
-      currentSession = currentRes.session;
+      currentSession = activeRes.session;
       summaries = summariesRes.summaries || [];
       latestRollingSummary = latestRes.summary;
       rollingTimeline = timelineRes.summaries || [];
@@ -299,6 +299,13 @@
       >
         Documentación
       </button>
+      <button
+        class="tab-button"
+        class:active={activeTab === "sessions"}
+        on:click={() => (activeTab = "sessions")}
+      >
+        Sesiones
+      </button>
     </div>
 
     {#if activeTab === "overview"}
@@ -377,49 +384,250 @@
       <div class="tab-content">
         <DocsViewer apiBase={API_BASE} />
       </div>
+    {:else if activeTab === "sessions"}
+      <div class="tab-content">
+        <h3>Sesiones de hoy</h3>
+        {#if dayToday && dayToday.sessions && dayToday.sessions.length > 0}
+          <div class="list">
+            {#each dayToday.sessions as session}
+              <div class="card session-card-small">
+                <div class="card-header">
+                  <div class="mono">
+                    {session.session_id}
+                    {#if session.active}
+                      <span class="badge-active">Activa</span>
+                    {/if}
+                  </div>
+                </div>
+                <div class="card-body">
+                  {#if session.intent}
+                    <div class="session-intent-small">{session.intent}</div>
+                  {/if}
+                  <div class="session-details-small">
+                    <div class="detail-item">
+                      <span class="detail-label">Inicio:</span>
+                      <span class="muted">
+                        {session.start_ts ? new Date(session.start_ts).toLocaleTimeString() : "N/A"}
+                      </span>
+                    </div>
+                    {#if session.end_ts}
+                      <div class="detail-item">
+                        <span class="detail-label">Fin:</span>
+                        <span class="muted">
+                          {new Date(session.end_ts).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    {/if}
+                    <div class="detail-item">
+                      <span class="detail-label">Duración:</span>
+                      <span class="muted">{formatElapsed(session.elapsed_minutes)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <div class="empty-state">
+            <p class="muted">No hay sesiones iniciadas hoy.</p>
+          </div>
+        {/if}
+        <h3>Checklist diario</h3>
+        <ul>
+          <li>Sesión abierta con intención clara</li>
+          <li>Repo limpio o cambios conscientes</li>
+          <li>Checkpoint pre-feat ejecutado</li>
+          <li>Plan de cierre listo</li>
+        </ul>
+        <h3>Último resumen rolling</h3>
+        {#if latestRollingSummary}
+          {@const assessment = latestRollingSummary.payload?.assessment || "UNKNOWN"}
+          <div class="card">
+            <div class="card-header">
+              <div class="mono">
+                {getAssessmentEmoji(assessment)} {assessment}
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="muted">
+                {latestRollingSummary.ts ? new Date(latestRollingSummary.ts).toLocaleString() : "N/A"}
+              </div>
+              <div><strong>Objetivo:</strong> {latestRollingSummary.payload?.objective || "No especificado"}</div>
+              <div><strong>Próximo paso:</strong> {latestRollingSummary.payload?.next_step || "N/A"}</div>
+              {#if latestRollingSummary.payload?.blocker}
+                <div class="error-text"><strong>Blocker:</strong> {latestRollingSummary.payload.blocker}</div>
+              {/if}
+              {#if latestRollingSummary.payload?.risks && latestRollingSummary.payload.risks.length > 0}
+                <div><strong>Riesgos:</strong></div>
+                <ul>
+                  {#each latestRollingSummary.payload.risks as risk}
+                    <li class="muted">{risk}</li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          </div>
+          <div style="margin-top: 1rem;">
+            <button 
+              class="btn-regenerate"
+              onclick="alert('Comando sugerido:\ndia summarize --scope day --mode rolling')"
+              title="Muestra comando para regenerar resumen"
+            >
+              Regenerar ahora
+            </button>
+          </div>
+        {:else}
+          <div class="empty-state">
+            <p class="muted">No hay resumen rolling. Ejecuta 'dia summarize --mode rolling' para generar.</p>
+          </div>
+        {/if}
+        <h3>Errores abiertos</h3>
+        {#if openErrors.length > 0}
+          <div class="errors-container">
+            <div class="errors-header">
+              <div class="errors-header-title">⚠️ {openErrors.length} {openErrors.length === 1 ? 'error' : 'errores'} abierto{openErrors.length === 1 ? '' : 's'}</div>
+              {#if openErrors.length > 10}
+                <div class="errors-header-subtitle">Mostrando los 10 más recientes</div>
+              {/if}
+            </div>
+            <div class="errors-stack">
+              {#each openErrors.slice(0, 10) as error, index}
+                {@const errorTitle = error.title || "Sin título"}
+                {@const errorSession = error.session?.session_id || "N/A"}
+                {@const errorDate = error.ts ? new Date(error.ts).toLocaleString() : "N/A"}
+                
+                <div 
+                  class="error-item"
+                  style="z-index: {openErrors.length - index};"
+                >
+                  <button
+                    class="error-tab"
+                    on:mouseenter={(e) => {
+                      const button = e.currentTarget;
+                      const tooltip = button.querySelector('.error-content');
+                      if (tooltip) {
+                        const existingTimeout = tooltip.dataset.timeoutId;
+                        if (existingTimeout) {
+                          clearTimeout(parseInt(existingTimeout));
+                          delete tooltip.dataset.timeoutId;
+                        }
+                        handleErrorTooltipPosition(e, tooltip);
+                        tooltip.style.pointerEvents = 'auto';
+                        tooltip.style.opacity = '1';
+                        tooltip.style.visibility = 'visible';
+                      }
+                    }}
+                    on:mouseleave={(e) => {
+                      const button = e.currentTarget;
+                      const tooltip = button.querySelector('.error-content');
+                      if (tooltip) {
+                        const timeout = setTimeout(() => {
+                          const tooltipRect = tooltip.getBoundingClientRect();
+                          const mouseX = e.clientX;
+                          const mouseY = e.clientY;
+                          const isOverTooltip = (
+                            mouseX >= tooltipRect.left - 10 &&
+                            mouseX <= tooltipRect.right + 10 &&
+                            mouseY >= tooltipRect.top - 10 &&
+                            mouseY <= tooltipRect.bottom + 10
+                          );
+                          if (!isOverTooltip) {
+                            tooltip.style.opacity = '0';
+                            setTimeout(() => {
+                              tooltip.style.visibility = 'hidden';
+                              tooltip.style.pointerEvents = 'none';
+                            }, 200);
+                          }
+                        }, 500);
+                        tooltip.dataset.timeoutId = timeout.toString();
+                      }
+                    }}
+                    type="button"
+                  >
+                    <span class="error-tab-title">{errorTitle}</span>
+                    <div 
+                      class="error-content"
+                      on:mouseenter={(e) => {
+                        const tooltip = e.currentTarget;
+                        const existingTimeout = tooltip.dataset.timeoutId;
+                        if (existingTimeout) {
+                          clearTimeout(parseInt(existingTimeout));
+                          delete tooltip.dataset.timeoutId;
+                        }
+                        tooltip.style.opacity = '1';
+                        tooltip.style.visibility = 'visible';
+                        tooltip.style.pointerEvents = 'auto';
+                      }}
+                      on:mouseleave={(e) => {
+                        const tooltip = e.currentTarget;
+                        const timeout = setTimeout(() => {
+                          tooltip.style.opacity = '0';
+                          setTimeout(() => {
+                            tooltip.style.visibility = 'hidden';
+                            tooltip.style.pointerEvents = 'none';
+                          }, 200);
+                        }, 500);
+                        tooltip.dataset.timeoutId = timeout.toString();
+                      }}
+                    >
+                      <div class="error-content-header">
+                        <h4 class="error-content-title">{errorTitle}</h4>
+                        <button
+                          class="error-copy-btn"
+                          type="button"
+                          on:click={() => copyErrorContent(error)}
+                          title="Copiar información del error"
+                        >
+                          📋
+                        </button>
+                      </div>
+                      <div class="error-content-meta">
+                        <div class="error-meta-item">
+                          <span class="error-meta-label">Sesión:</span>
+                          <span class="error-meta-value">{errorSession}</span>
+                        </div>
+                        <div class="error-meta-item">
+                          <span class="error-meta-label">Fecha:</span>
+                          <span class="error-meta-value">{errorDate}</span>
+                        </div>
+                        {#if error.artifact_ref}
+                          <div class="error-meta-item">
+                            <span class="error-meta-label">Artifact:</span>
+                            <span class="error-meta-value mono">{error.artifact_ref}</span>
+                          </div>
+                        {/if}
+                        {#if error.error_hash}
+                          <div class="error-meta-item">
+                            <span class="error-meta-label">Hash:</span>
+                            <span class="error-meta-value mono" style="font-size: 10px;">{error.error_hash.substring(0, 16)}...</span>
+                          </div>
+                        {/if}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <div class="empty-state">
+            <p class="muted">No hay errores abiertos.</p>
+          </div>
+        {/if}
+      </div>
     {/if}
   </section>
 
   <section class="panel">
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--spacing-lg);">
       <h2 style="margin: 0;">Zona viva</h2>
-      <button 
-        class="btn-open-board"
-        on:click={openBoard}
-        title="Abrir Feature Board"
-      >
-        Abrir Board
-      </button>
-    </div>
-    <div class="tabs">
-      <button
-        class="tab-button"
-        class:active={zonaVivaTab === "sesion"}
-        on:click={() => (zonaVivaTab = "sesion")}
-      >
-        Sesión
-      </button>
-      <button
-        class="tab-button"
-        class:active={zonaVivaTab === "bitacora"}
-        on:click={() => (zonaVivaTab = "bitacora")}
-      >
-        Bitácora
-      </button>
-      <button
-        class="tab-button"
-        class:active={zonaVivaTab === "objetivos"}
-        on:click={() => (zonaVivaTab = "objetivos")}
-      >
-        Objetivos
-      </button>
-      {#if temporalNotesCount > 0}
-        <button
-          class="tab-button"
-          class:active={zonaVivaTab === "temporales"}
-          on:click={() => (zonaVivaTab = "temporales")}
+      {#if currentSession}
+        <button 
+          class="btn-open-board"
+          on:click={openBoard}
+          title="Abrir Feature Board"
         >
-          Notas Temporales ({temporalNotesCount})
+          Abrir Board
         </button>
       {/if}
     </div>
@@ -428,285 +636,32 @@
         <div class="loading-state">
           <p class="muted">Cargando...</p>
         </div>
-      {:else if zonaVivaTab === "sesion"}
-        {#if currentSession}
-          <ErrorFixCommitChain apiBase={API_BASE} />
-        {/if}
+      {:else if currentSession}
+        <ErrorFixCommitChain apiBase={API_BASE} />
         <SessionObjectives session={currentSession} />
-        {#if currentSession}
-          <div class="card session-card">
-            <div class="card-header">
-              <div class="mono session-id">
-                {currentSession.day_id} {currentSession.session_id}
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="session-details">
-                <div class="detail-item">
-                  <span class="detail-label">Repo:</span>
-                  <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">Branch:</span>
-                  <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        {/if}
-      <h3>Sesiones de hoy</h3>
-      {#if dayToday && dayToday.sessions && dayToday.sessions.length > 0}
-        <div class="list">
-          {#each dayToday.sessions as session}
-            <div class="card session-card-small">
-              <div class="card-header">
-                <div class="mono">
-                  {session.session_id}
-                  {#if session.active}
-                    <span class="badge-active">Activa</span>
-                  {/if}
-                </div>
-              </div>
-              <div class="card-body">
-                {#if session.intent}
-                  <div class="session-intent-small">{session.intent}</div>
-                {/if}
-                <div class="session-details-small">
-                  <div class="detail-item">
-                    <span class="detail-label">Inicio:</span>
-                    <span class="muted">
-                      {session.start_ts ? new Date(session.start_ts).toLocaleTimeString() : "N/A"}
-                    </span>
-                  </div>
-                  {#if session.end_ts}
-                    <div class="detail-item">
-                      <span class="detail-label">Fin:</span>
-                      <span class="muted">
-                        {new Date(session.end_ts).toLocaleTimeString()}
-                      </span>
-                    </div>
-                  {/if}
-                  <div class="detail-item">
-                    <span class="detail-label">Duración:</span>
-                    <span class="muted">{formatElapsed(session.elapsed_minutes)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <div class="empty-state">
-          <p class="muted">No hay sesiones iniciadas hoy.</p>
-        </div>
-      {/if}
-      <h3>Checklist diario</h3>
-      <ul>
-        <li>Sesión abierta con intención clara</li>
-        <li>Repo limpio o cambios conscientes</li>
-        <li>Checkpoint pre-feat ejecutado</li>
-        <li>Plan de cierre listo</li>
-      </ul>
-      <h3>Último resumen rolling</h3>
-      {#if latestRollingSummary}
-        {@const assessment = latestRollingSummary.payload?.assessment || "UNKNOWN"}
-        <div class="card">
+        <div class="card session-card">
           <div class="card-header">
-            <div class="mono">
-              {getAssessmentEmoji(assessment)} {assessment}
+            <div class="mono session-id">
+              {currentSession.day_id} {currentSession.session_id}
             </div>
           </div>
           <div class="card-body">
-            <div class="muted">
-              {latestRollingSummary.ts ? new Date(latestRollingSummary.ts).toLocaleString() : "N/A"}
-            </div>
-            <div><strong>Objetivo:</strong> {latestRollingSummary.payload?.objective || "No especificado"}</div>
-            <div><strong>Próximo paso:</strong> {latestRollingSummary.payload?.next_step || "N/A"}</div>
-            {#if latestRollingSummary.payload?.blocker}
-              <div class="error-text"><strong>Blocker:</strong> {latestRollingSummary.payload.blocker}</div>
-            {/if}
-            {#if latestRollingSummary.payload?.risks && latestRollingSummary.payload.risks.length > 0}
-              <div><strong>Riesgos:</strong></div>
-              <ul>
-                {#each latestRollingSummary.payload.risks as risk}
-                  <li class="muted">{risk}</li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        </div>
-        <div style="margin-top: 1rem;">
-          <button 
-            class="btn-regenerate"
-            onclick="alert('Comando sugerido:\ndia summarize --scope day --mode rolling')"
-            title="Muestra comando para regenerar resumen"
-          >
-            Regenerar ahora
-          </button>
-        </div>
-      {:else}
-        <div class="empty-state">
-          <p class="muted">No hay resumen rolling. Ejecuta 'dia summarize --mode rolling' para generar.</p>
-        </div>
-      {/if}
-      <h3>Errores abiertos</h3>
-      {#if openErrors.length > 0}
-        <div class="errors-container">
-          <div class="errors-header">
-            <div class="errors-header-title">⚠️ {openErrors.length} {openErrors.length === 1 ? 'error' : 'errores'} abierto{openErrors.length === 1 ? '' : 's'}</div>
-            {#if openErrors.length > 10}
-              <div class="errors-header-subtitle">Mostrando los 10 más recientes</div>
-            {/if}
-          </div>
-          <div class="errors-stack">
-            {#each openErrors.slice(0, 10) as error, index}
-              {@const errorTitle = error.title || "Sin título"}
-              {@const errorSession = error.session?.session_id || "N/A"}
-              {@const errorDate = error.ts ? new Date(error.ts).toLocaleString() : "N/A"}
-              
-              <div 
-                class="error-item"
-                style="z-index: {openErrors.length - index};"
-              >
-                <button
-                  class="error-tab"
-                  on:mouseenter={(e) => {
-                    const button = e.currentTarget;
-                    const tooltip = button.querySelector('.error-content');
-                    if (tooltip) {
-                      // Cancelar cualquier timeout pendiente
-                      const existingTimeout = tooltip.dataset.timeoutId;
-                      if (existingTimeout) {
-                        clearTimeout(parseInt(existingTimeout));
-                        delete tooltip.dataset.timeoutId;
-                      }
-                      
-                      handleErrorTooltipPosition(e, tooltip);
-                      // Hacer tooltip interactivo al hover
-                      tooltip.style.pointerEvents = 'auto';
-                      tooltip.style.opacity = '1';
-                      tooltip.style.visibility = 'visible';
-                    }
-                  }}
-                  on:mouseleave={(e) => {
-                    const button = e.currentTarget;
-                    const tooltip = button.querySelector('.error-content');
-                    if (tooltip) {
-                      // Delay antes de cerrar (500ms)
-                      const timeout = setTimeout(() => {
-                        // Verificar que el mouse no esté sobre el tooltip
-                        const tooltipRect = tooltip.getBoundingClientRect();
-                        const mouseX = e.clientX;
-                        const mouseY = e.clientY;
-                        const isOverTooltip = (
-                          mouseX >= tooltipRect.left - 10 &&
-                          mouseX <= tooltipRect.right + 10 &&
-                          mouseY >= tooltipRect.top - 10 &&
-                          mouseY <= tooltipRect.bottom + 10
-                        );
-                        
-                        if (!isOverTooltip) {
-                          // Fade out
-                          tooltip.style.opacity = '0';
-                          setTimeout(() => {
-                            tooltip.style.visibility = 'hidden';
-                            tooltip.style.pointerEvents = 'none';
-                          }, 200); // Duración del fade out
-                        }
-                      }, 500); // Delay antes de iniciar cierre
-                      
-                      tooltip.dataset.timeoutId = timeout.toString();
-                    }
-                  }}
-                  type="button"
-                >
-                  <span class="error-tab-title">{errorTitle}</span>
-                  
-                  <!-- Tooltip con detalles -->
-                  <div 
-                    class="error-content"
-                    on:mouseenter={(e) => {
-                      const tooltip = e.currentTarget;
-                      // Cancelar cualquier timeout pendiente
-                      const existingTimeout = tooltip.dataset.timeoutId;
-                      if (existingTimeout) {
-                        clearTimeout(parseInt(existingTimeout));
-                        delete tooltip.dataset.timeoutId;
-                      }
-                      
-                      tooltip.style.opacity = '1';
-                      tooltip.style.visibility = 'visible';
-                      tooltip.style.pointerEvents = 'auto';
-                    }}
-                    on:mouseleave={(e) => {
-                      const tooltip = e.currentTarget;
-                      // Delay antes de cerrar (500ms) con fade out
-                      const timeout = setTimeout(() => {
-                        tooltip.style.opacity = '0';
-                        setTimeout(() => {
-                          tooltip.style.visibility = 'hidden';
-                          tooltip.style.pointerEvents = 'none';
-                        }, 200); // Duración del fade out
-                      }, 500);
-                      
-                      tooltip.dataset.timeoutId = timeout.toString();
-                    }}
-                  >
-                    <div class="error-content-header">
-                      <h4 class="error-content-title">{errorTitle}</h4>
-                      <button
-                        class="error-copy-btn"
-                        type="button"
-                        on:click={() => copyErrorContent(error)}
-                        title="Copiar información del error"
-                      >
-                        📋
-                      </button>
-                    </div>
-                    <div class="error-content-meta">
-                      <div class="error-meta-item">
-                        <span class="error-meta-label">Sesión:</span>
-                        <span class="error-meta-value">{errorSession}</span>
-                      </div>
-                      <div class="error-meta-item">
-                        <span class="error-meta-label">Fecha:</span>
-                        <span class="error-meta-value">{errorDate}</span>
-                      </div>
-                      {#if error.artifact_ref}
-                        <div class="error-meta-item">
-                          <span class="error-meta-label">Artifact:</span>
-                          <span class="error-meta-value mono">{error.artifact_ref}</span>
-                        </div>
-                      {/if}
-                      {#if error.error_hash}
-                        <div class="error-meta-item">
-                          <span class="error-meta-label">Hash:</span>
-                          <span class="error-meta-value mono" style="font-size: 10px;">{error.error_hash.substring(0, 16)}...</span>
-                        </div>
-                      {/if}
-                    </div>
-                  </div>
-                </button>
+            <div class="session-details">
+              <div class="detail-item">
+                <span class="detail-label">Repo:</span>
+                <span class="muted mono">{currentSession.repo?.path || "N/A"}</span>
               </div>
-            {/each}
+              <div class="detail-item">
+                <span class="detail-label">Branch:</span>
+                <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
+              </div>
+            </div>
           </div>
         </div>
       {:else}
         <div class="empty-state">
-          <p class="muted">No hay errores abiertos.</p>
+          <p class="muted">No hay sesión activa. Iniciá con <code>dia start</code>.</p>
         </div>
-      {/if}
-      {:else if zonaVivaTab === "bitacora"}
-        <BitacoraEditor apiBase={API_BASE} dayId={today} />
-      {:else if zonaVivaTab === "objetivos"}
-        <SessionObjectives session={currentSession} />
-        {#if !currentSession}
-          <div class="empty-state">
-            <p class="muted">No hay sesión activa para mostrar objetivos.</p>
-          </div>
-        {/if}
-      {:else if zonaVivaTab === "temporales"}
-        <TemporalNotesViewer apiBase={API_BASE} dayId={today} />
       {/if}
     </div>
   </section>

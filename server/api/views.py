@@ -47,6 +47,8 @@ def _build_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "project": event.get("project"),
                 "actor": event.get("actor"),
                 "started_after_close": event_type == "SessionStartedAfterDayClosed",
+                "paused_ts": None,
+                "resumed_ts": None,
             }
         if event_type == "SessionEnded":
             session = event.get("session", {})
@@ -56,6 +58,16 @@ def _build_sessions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             sessions[session_id]["end_ts"] = event.get("ts")
             sessions[session_id]["result"] = session.get("result")
             sessions[session_id]["repo"] = event.get("repo")
+        if event_type == "SessionPaused":
+            session = event.get("session", {})
+            session_id = session.get("session_id")
+            if session_id and session_id in sessions:
+                sessions[session_id]["paused_ts"] = event.get("ts")
+        if event_type == "SessionResumed":
+            session = event.get("session", {})
+            session_id = session.get("session_id")
+            if session_id and session_id in sessions:
+                sessions[session_id]["resumed_ts"] = event.get("ts")
     return list(sessions.values())
 
 
@@ -73,6 +85,85 @@ def current_session(request):
     for item in sessions_list:
         if item.get("end_ts") is None:
             return JsonResponse({"session": item})
+    return JsonResponse({"session": None})
+
+
+def active_session(request):
+    """Retorna la sesión activa (no paused) o None.
+    
+    Una sesión está activa si:
+    - Tiene SessionStarted/SessionStartedAfterDayClosed
+    - No tiene SessionEnded
+    - No tiene SessionPaused, o tiene SessionPaused pero también tiene SessionResumed más reciente
+    """
+    events = _read_events()
+    sessions: dict[str, dict[str, Any]] = {}
+    ended_sessions: set[str] = set()  # Track sessions that have ended
+    
+    # Primero, identificar todas las sesiones que han terminado
+    for event in events:
+        if event.get("type") == "SessionEnded":
+            session_id = event.get("session", {}).get("session_id")
+            if session_id:
+                ended_sessions.add(session_id)
+    
+    # Ahora construir sesiones y verificar estado
+    for event in events:
+        event_type = event.get("type")
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            if not session_id:
+                continue
+            # Solo procesar si la sesión no ha terminado
+            if session_id not in ended_sessions:
+                sessions[session_id] = {
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "session_id": session_id,
+                    "intent": event.get("session", {}).get("intent"),
+                    "dod": event.get("session", {}).get("dod"),
+                    "mode": event.get("session", {}).get("mode"),
+                    "start_ts": event.get("ts"),
+                    "end_ts": None,
+                    "result": None,
+                    "repo": event.get("repo"),
+                    "project": event.get("project"),
+                    "actor": event.get("actor"),
+                    "started_after_close": event_type == "SessionStartedAfterDayClosed",
+                    "paused_ts": None,
+                    "resumed_ts": None,
+                }
+        if event_type == "SessionPaused":
+            session_id = event.get("session", {}).get("session_id")
+            if session_id and session_id in sessions:
+                sessions[session_id]["paused_ts"] = event.get("ts")
+        if event_type == "SessionResumed":
+            session_id = event.get("session", {}).get("session_id")
+            if session_id and session_id in sessions:
+                sessions[session_id]["resumed_ts"] = event.get("ts")
+    
+    # Buscar sesión activa (no ended, no paused o resumed después de paused)
+    sessions_list = list(sessions.values())
+    sessions_list.sort(key=lambda item: item.get("start_ts") or "", reverse=True)
+    
+    for item in sessions_list:
+        # Verificar explícitamente que no esté en ended_sessions
+        if item.get("session_id") in ended_sessions:
+            continue
+            
+        paused_ts = item.get("paused_ts")
+        resumed_ts = item.get("resumed_ts")
+        
+        # Si no tiene pause, está activa
+        if not paused_ts:
+            return JsonResponse({"session": item})
+        
+        # Si tiene pause, verificar que tenga resume más reciente
+        if resumed_ts and resumed_ts > paused_ts:
+            return JsonResponse({"session": item})
+        
+        # Está paused, no es activa
+        continue
+    
     return JsonResponse({"session": None})
 
 

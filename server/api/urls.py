@@ -6,6 +6,7 @@ from . import views
 urlpatterns = [
     path("sessions/", views.sessions, name="sessions"),
     path("sessions/current/", views.current_session, name="current_session"),
+    path("session/active/", views.active_session, name="active_session"),
     path("events/recent/", views.events_recent, name="events_recent"),
     path("metrics/", views.metrics, name="metrics"),
     path("summaries/", views.daily_summaries, name="daily_summaries"),
