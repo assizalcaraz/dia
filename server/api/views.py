@@ -103,16 +103,20 @@ def active_session(request):
     
     events = _read_events()
     sessions: dict[str, dict[str, Any]] = {}
-    ended_sessions: set[str] = set()  # Track sessions that have ended
+    ended_sessions: set[str] = set()  # Track sessions that have ended (key: session_id:repo_path)
     today = datetime.now().astimezone().date().isoformat()
     anomalies: list[dict[str, Any]] = []
     
     # Primero, identificar todas las sesiones que han terminado
+    # Usar clave compuesta session_id:repo_path para distinguir sesiones en diferentes repos
     for event in events:
         if event.get("type") in ("SessionEnded", "SessionForceClosed"):
             session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
             if session_id:
-                ended_sessions.add(session_id)
+                # Clave compuesta para distinguir sesiones en diferentes repos
+                key = f"{session_id}:{repo_path}"
+                ended_sessions.add(key)
     
     # Ahora construir sesiones y verificar estado
     for event in events:
@@ -121,8 +125,11 @@ def active_session(request):
             session_id = event.get("session", {}).get("session_id")
             if not session_id:
                 continue
+            repo_path = event.get("repo", {}).get("path", "")
+            # Clave compuesta para distinguir sesiones en diferentes repos
+            key = f"{session_id}:{repo_path}"
             # Solo procesar si la sesión no ha terminado
-            if session_id not in ended_sessions:
+            if key not in ended_sessions:
                 day_id = event.get("session", {}).get("day_id")
                 session_data = {
                     "day_id": day_id,
@@ -140,7 +147,7 @@ def active_session(request):
                     "paused_ts": None,
                     "resumed_ts": None,
                 }
-                sessions[session_id] = session_data
+                sessions[key] = session_data
                 
                 # Detectar anomalía: sesión vieja sin cerrar
                 if day_id != today:
@@ -151,12 +158,16 @@ def active_session(request):
                     })
         if event_type == "SessionPaused":
             session_id = event.get("session", {}).get("session_id")
-            if session_id and session_id in sessions:
-                sessions[session_id]["paused_ts"] = event.get("ts")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions:
+                sessions[key]["paused_ts"] = event.get("ts")
         if event_type == "SessionResumed":
             session_id = event.get("session", {}).get("session_id")
-            if session_id and session_id in sessions:
-                sessions[session_id]["resumed_ts"] = event.get("ts")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions:
+                sessions[key]["resumed_ts"] = event.get("ts")
     
     # Buscar sesión activa (no ended, no paused o resumed después de paused)
     sessions_list = list(sessions.values())
@@ -164,8 +175,11 @@ def active_session(request):
     
     active_sessions = []
     for item in sessions_list:
-        # Verificar explícitamente que no esté en ended_sessions
-        if item.get("session_id") in ended_sessions:
+        # Verificar explícitamente que no esté en ended_sessions usando clave compuesta
+        session_id = item.get("session_id")
+        repo_path = item.get("repo", {}).get("path", "")
+        key = f"{session_id}:{repo_path}"
+        if key in ended_sessions:
             continue
             
         paused_ts = item.get("paused_ts")

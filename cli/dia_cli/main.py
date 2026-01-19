@@ -327,11 +327,13 @@ def cmd_start(args: argparse.Namespace) -> int:
     sessions_path = _sessions_path(root)
     events_path = _events_path(root)
 
-    # Validar que no haya sesión activa (no paused)
-    active = active_session(events_path)
+    # Validar que no haya sesión activa (no paused) para este repositorio
+    active = active_session(events_path, repo_path=str(repo_path))
     if active:
         session_id_active = active.get("session", {}).get("session_id", "N/A")
+        active_repo = active.get("repo", {}).get("path", "N/A")
         print(f"Error: Ya hay una sesión activa: {session_id_active}", file=sys.stderr)
+        print(f"  Repositorio: {active_repo}", file=sys.stderr)
         print("Sugerencia: Ejecuta 'dia end' para cerrar la sesión activa o 'dia pause' para pausarla.", file=sys.stderr)
         return 1
 
