@@ -93,16 +93,23 @@ def active_session(request):
     
     Una sesión está activa si:
     - Tiene SessionStarted/SessionStartedAfterDayClosed
-    - No tiene SessionEnded
+    - No tiene SessionEnded ni SessionForceClosed
     - No tiene SessionPaused, o tiene SessionPaused pero también tiene SessionResumed más reciente
+    
+    Si hay múltiples sesiones activas, retorna la más reciente y agrega advertencia.
+    Si hay sesión sin end_ts y day_id != today, la marca como anomalía pero no la oculta.
     """
+    from datetime import datetime
+    
     events = _read_events()
     sessions: dict[str, dict[str, Any]] = {}
     ended_sessions: set[str] = set()  # Track sessions that have ended
+    today = datetime.now().astimezone().date().isoformat()
+    anomalies: list[dict[str, Any]] = []
     
     # Primero, identificar todas las sesiones que han terminado
     for event in events:
-        if event.get("type") == "SessionEnded":
+        if event.get("type") in ("SessionEnded", "SessionForceClosed"):
             session_id = event.get("session", {}).get("session_id")
             if session_id:
                 ended_sessions.add(session_id)
@@ -116,8 +123,9 @@ def active_session(request):
                 continue
             # Solo procesar si la sesión no ha terminado
             if session_id not in ended_sessions:
-                sessions[session_id] = {
-                    "day_id": event.get("session", {}).get("day_id"),
+                day_id = event.get("session", {}).get("day_id")
+                session_data = {
+                    "day_id": day_id,
                     "session_id": session_id,
                     "intent": event.get("session", {}).get("intent"),
                     "dod": event.get("session", {}).get("dod"),
@@ -132,6 +140,15 @@ def active_session(request):
                     "paused_ts": None,
                     "resumed_ts": None,
                 }
+                sessions[session_id] = session_data
+                
+                # Detectar anomalía: sesión vieja sin cerrar
+                if day_id != today:
+                    anomalies.append({
+                        "session_id": session_id,
+                        "day_id": day_id,
+                        "type": "orphan_old_session",
+                    })
         if event_type == "SessionPaused":
             session_id = event.get("session", {}).get("session_id")
             if session_id and session_id in sessions:
@@ -145,6 +162,7 @@ def active_session(request):
     sessions_list = list(sessions.values())
     sessions_list.sort(key=lambda item: item.get("start_ts") or "", reverse=True)
     
+    active_sessions = []
     for item in sessions_list:
         # Verificar explícitamente que no esté en ended_sessions
         if item.get("session_id") in ended_sessions:
@@ -153,18 +171,44 @@ def active_session(request):
         paused_ts = item.get("paused_ts")
         resumed_ts = item.get("resumed_ts")
         
-        # Si no tiene pause, está activa
-        if not paused_ts:
-            return JsonResponse({"session": item})
+        # Verificar estado paused
+        is_paused = False
+        if paused_ts:
+            if not resumed_ts:
+                is_paused = True
+            elif paused_ts > resumed_ts:
+                is_paused = True
         
-        # Si tiene pause, verificar que tenga resume más reciente
-        if resumed_ts and resumed_ts > paused_ts:
-            return JsonResponse({"session": item})
-        
-        # Está paused, no es activa
-        continue
+        # Si no está paused, es activa
+        if not is_paused:
+            active_sessions.append(item)
     
-    return JsonResponse({"session": None})
+    # Si hay múltiples activas, retornar la más reciente y agregar advertencia
+    if len(active_sessions) > 1:
+        # Registrar anomalía
+        anomalies.append({
+            "type": "multiple_active_sessions",
+            "count": len(active_sessions),
+            "sessions": [s["session_id"] for s in active_sessions],
+        })
+        # Retornar la más reciente
+        response = {"session": active_sessions[0]}
+        if anomalies:
+            response["anomalies"] = anomalies
+        return JsonResponse(response)
+    
+    # Si hay una activa, retornarla (con advertencias si aplica)
+    if active_sessions:
+        response = {"session": active_sessions[0]}
+        if anomalies:
+            response["anomalies"] = anomalies
+        return JsonResponse(response)
+    
+    # No hay sesiones activas
+    response = {"session": None}
+    if anomalies:
+        response["anomalies"] = anomalies
+    return JsonResponse(response)
 
 
 def events_recent(request):

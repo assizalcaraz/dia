@@ -214,6 +214,93 @@ def cmd_session_resume(args: argparse.Namespace) -> int:
     return cmd_resume(args)
 
 
+def cmd_session_close(args: argparse.Namespace) -> int:
+    """Cierra una sesión por ID (reparación manual de sesiones huérfanas)."""
+    root = config.data_root(args.data_root)
+    config.ensure_data_dirs(root)
+    events_path = _events_path(root)
+    sessions_path = _sessions_path(root)
+    
+    session_id = args.session_id
+    if not session_id:
+        print("Error: --id requerido", file=sys.stderr)
+        return 1
+    
+    # Buscar sesión por ID en eventos
+    events = list(read_json_lines(events_path))
+    session_started = None
+    session_ended = False
+    
+    for event in events:
+        event_type = event.get("type")
+        event_session_id = event.get("session", {}).get("session_id")
+        
+        if event_session_id == session_id:
+            if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+                session_started = event
+            elif event_type == "SessionEnded":
+                session_ended = True
+                break
+    
+    if not session_started:
+        print(f"Error: Sesión {session_id} no encontrada.", file=sys.stderr)
+        return 1
+    
+    if session_ended:
+        print(f"Sesión {session_id} ya está cerrada.", file=sys.stderr)
+        return 0
+    
+    # Crear evento SessionForceClosed
+    session = {
+        "day_id": session_started["session"]["day_id"],
+        "session_id": session_id,
+        "result": "forced_close",
+    }
+    
+    close_event = _build_event(
+        "SessionForceClosed",
+        session=session,
+        actor=_actor_from_args(args),
+        project=_project_from_args(args),
+        repo=session_started.get("repo"),
+        payload={
+            "cmd": "dia session close",
+            "reason": args.reason or "Sesión huérfana detectada y reparada",
+            "forced": True,
+        },
+    )
+    
+    # También crear SessionEnded para compatibilidad
+    end_event = _build_event(
+        "SessionEnded",
+        session=session,
+        actor=_actor_from_args(args),
+        project=_project_from_args(args),
+        repo=session_started.get("repo"),
+        payload={
+            "cmd": "dia session close",
+            "forced": True,
+            "duration_min": None,
+        },
+    )
+    
+    append_line(events_path, close_event)
+    append_line(events_path, end_event)
+    append_line(sessions_path, end_event)
+    
+    # Actualizar bitácora
+    jornada_path = config.bitacora_dir(root) / f"{session['day_id']}.md"
+    if jornada_path.exists():
+        from .utils import append_to_jornada_auto_section
+        reason_text = f" — {args.reason}" if args.reason else ""
+        close_info = f"- {now_iso()} — SessionForceClosed{reason_text}\n"
+        close_info += f"- {now_iso()} — SessionEnded (forced)\n"
+        append_to_jornada_auto_section(jornada_path, close_info)
+    
+    print(f"Sesión {session_id} cerrada forzadamente. Eventos SessionForceClosed y SessionEnded registrados.")
+    return 0
+
+
 def cmd_start(args: argparse.Namespace) -> int:
     repo_path = Path(args.repo or Path.cwd()).expanduser().resolve()
     project_name = args.project or repo_path.name
@@ -726,14 +813,38 @@ def cmd_day_close(args: argparse.Namespace) -> int:
         print(f"Jornada {day} ya está cerrada.", file=sys.stderr)
         return 1
     
-    # Validar que no haya sesiones activas o pausadas
-    active = active_session(events_path)
-    current = current_session(events_path)
+    # Validar que no haya sesiones activas o pausadas (incluyendo huérfanas)
+    events = list(read_json_lines(events_path))
+    ended_sessions: set[str] = set()
+    orphan_sessions: list[dict[str, Any]] = []
     
-    if active or current:
-        session_id = (active or current).get("session", {}).get("session_id", "N/A")
-        print(f"Error: Hay sesión activa o pausada: {session_id}", file=sys.stderr)
-        print("Sugerencia: Ejecuta 'dia session end' para cerrar todas las sesiones antes de cerrar el día.", file=sys.stderr)
+    # Identificar sesiones cerradas
+    for event in events:
+        if event.get("type") in ("SessionEnded", "SessionForceClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            if session_id:
+                ended_sessions.add(session_id)
+    
+    # Buscar sesiones huérfanas (started sin ended)
+    for event in events:
+        event_type = event.get("type")
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            if session_id and session_id not in ended_sessions:
+                orphan_sessions.append({
+                    "session_id": session_id,
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "start_ts": event.get("ts"),
+                    "repo": event.get("repo", {}).get("path", "N/A"),
+                })
+    
+    if orphan_sessions:
+        print(f"Error: No puedo cerrar el día: hay {len(orphan_sessions)} sesión(es) sin cerrar:", file=sys.stderr)
+        for sess in orphan_sessions:
+            print(f"  - {sess['session_id']} (día {sess['day_id']}, repo: {sess['repo']})", file=sys.stderr)
+        print("\nSugerencias:", file=sys.stderr)
+        print("  - Para sesión del día actual: 'dia session end'", file=sys.stderr)
+        print("  - Para sesión huérfana: 'dia session close --id <session_id> --reason \"...\"'", file=sys.stderr)
         return 1
     
     # Generar summary nightly antes de cerrar
@@ -1666,6 +1777,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     session_resume_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
     session_resume_parser.set_defaults(func=cmd_session_resume)
+    
+    session_close_parser = session_subparsers.add_parser(
+        "close", help="Cierra sesión por ID (reparación manual de sesiones huérfanas)", parents=[common]
+    )
+    session_close_parser.add_argument("--id", dest="session_id", required=True, help="ID de sesión (ej: S03)")
+    session_close_parser.add_argument("--reason", required=False, help="Razón del cierre forzado")
+    session_close_parser.set_defaults(func=cmd_session_close)
 
     # Namespace: day
     day_parser = subparsers.add_parser(
