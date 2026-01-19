@@ -742,6 +742,7 @@ def cmd_day_close(args: argparse.Namespace) -> int:
         summary_args = argparse.Namespace()
         summary_args.data_root = args.data_root
         summary_args.day_id = day
+        summary_args.mode = "nightly"
         summary_args.actor = args.actor
         summary_args.user_type = args.user_type
         summary_args.role = args.role

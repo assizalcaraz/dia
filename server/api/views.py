@@ -95,14 +95,10 @@ def active_session(request):
     - Tiene SessionStarted/SessionStartedAfterDayClosed
     - No tiene SessionEnded
     - No tiene SessionPaused, o tiene SessionPaused pero también tiene SessionResumed más reciente
-    - Es del día actual (para evitar sesiones huérfanas de días anteriores)
     """
-    from datetime import datetime
-    
     events = _read_events()
     sessions: dict[str, dict[str, Any]] = {}
     ended_sessions: set[str] = set()  # Track sessions that have ended
-    today = datetime.now().astimezone().date().isoformat()
     
     # Primero, identificar todas las sesiones que han terminado
     for event in events:
@@ -120,25 +116,22 @@ def active_session(request):
                 continue
             # Solo procesar si la sesión no ha terminado
             if session_id not in ended_sessions:
-                day_id = event.get("session", {}).get("day_id")
-                # Solo considerar sesiones del día actual para evitar sesiones huérfanas
-                if day_id == today:
-                    sessions[session_id] = {
-                        "day_id": day_id,
-                        "session_id": session_id,
-                        "intent": event.get("session", {}).get("intent"),
-                        "dod": event.get("session", {}).get("dod"),
-                        "mode": event.get("session", {}).get("mode"),
-                        "start_ts": event.get("ts"),
-                        "end_ts": None,
-                        "result": None,
-                        "repo": event.get("repo"),
-                        "project": event.get("project"),
-                        "actor": event.get("actor"),
-                        "started_after_close": event_type == "SessionStartedAfterDayClosed",
-                        "paused_ts": None,
-                        "resumed_ts": None,
-                    }
+                sessions[session_id] = {
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "session_id": session_id,
+                    "intent": event.get("session", {}).get("intent"),
+                    "dod": event.get("session", {}).get("dod"),
+                    "mode": event.get("session", {}).get("mode"),
+                    "start_ts": event.get("ts"),
+                    "end_ts": None,
+                    "result": None,
+                    "repo": event.get("repo"),
+                    "project": event.get("project"),
+                    "actor": event.get("actor"),
+                    "started_after_close": event_type == "SessionStartedAfterDayClosed",
+                    "paused_ts": None,
+                    "resumed_ts": None,
+                }
         if event_type == "SessionPaused":
             session_id = event.get("session", {}).get("session_id")
             if session_id and session_id in sessions:

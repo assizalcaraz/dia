@@ -67,22 +67,10 @@ Documentación técnica de módulos y componentes del sistema.
 
 Guías específicas de cada comando y herramienta.
 
-#### Comandos Nuevos (Recomendados)
-
-- **[`dia session`](guides/dia-session.md)** — Gestión de sesiones (`start`, `end`, `pause`, `resume`)
-- **[`dia day`](guides/dia-day.md)** — Gestión de días/jornadas (`status`, `close`)
-- **[`dia summary`](guides/dia-summary.md)** — Generación de resúmenes (`rolling`, `nightly`)
-
-#### Comandos Legacy
-
-- **[`dia start`](guides/dia-start.md)** — [LEGACY] Alias de `dia session start`
+- **[`dia start`](guides/dia-start.md)** — Iniciar sesión
 - **[`dia pre-feat`](guides/dia-pre-feat.md)** — Checkpoint pre-feat
-- **[`dia end`](guides/dia-end.md)** — [LEGACY] Alias de `dia session end`
-- **[`dia close-day`](guides/dia-close-day.md)** — [LEGACY] Alias de `dia day close`
-- **[`dia summarize`](guides/dia-summarize.md)** — [LEGACY] Alias de `dia summary rolling|nightly`
-
-#### Otros Comandos
-
+- **[`dia end`](guides/dia-end.md)** — Cerrar sesión
+- **[`dia close-day`](guides/dia-close-day.md)** — Cerrar jornada
 - **[`dia E`](guides/dia-desarrollo.md#capturar-errores)** — Capturar error con título automático (comando corto)
 - **[`dia cap`](guides/dia-cap.md)** — Capturar errores/logs (comando completo)
 - **[`dia fix`](guides/dia-fix.md)** — Linkear fix a error
@@ -133,14 +121,10 @@ docs/
 │   │   └── MarkdownRenderer.md
 │   └── App.md
 ├── guides/            # Nivel 3: Guías de herramientas
-│   ├── dia-session.md      # Gestión de sesiones (nuevo)
-│   ├── dia-day.md          # Gestión de días (nuevo)
-│   ├── dia-summary.md      # Generación de resúmenes (nuevo)
-│   ├── dia-start.md        # [LEGACY] Alias de dia session start
+│   ├── dia-start.md
 │   ├── dia-pre-feat.md
-│   ├── dia-end.md          # [LEGACY] Alias de dia session end
-│   ├── dia-close-day.md    # [LEGACY] Alias de dia day close
-│   ├── dia-summarize.md    # [LEGACY] Alias de dia summary
+│   ├── dia-end.md
+│   ├── dia-close-day.md
 │   ├── dia-cap.md
 │   └── dia-fix.md
 └── manual/            # Nivel 1: Tutorial usuario

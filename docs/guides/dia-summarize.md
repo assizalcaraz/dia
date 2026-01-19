@@ -1,9 +1,5 @@
 # dia summarize
 
-**[LEGACY]** Alias de `dia summary rolling` o `dia summary nightly` según `--mode`. Se recomienda usar los comandos nuevos:
-- `dia summary rolling` - Resumen rolling
-- `dia summary nightly` - Resumen nightly
-
 Genera resúmenes regenerables (rolling o nightly) como vistas derivadas de los eventos del día.
 
 ## Uso
@@ -14,13 +10,11 @@ dia summarize --mode nightly
 dia summarize --mode rolling --day-id 2026-01-17
 ```
 
-**Recomendado**: Usa `dia summary rolling` o `dia summary nightly` en su lugar.
-
 ## Argumentos
 
 - `--mode` (requerido): `rolling` | `nightly`
-  - `rolling`: Resumen regenerable durante el día (puede ejecutarse múltiples veces). Requiere sesión activa.
-  - `nightly`: Resumen generado al final del día (típicamente por cron). Idealmente requiere día cerrado.
+  - `rolling`: Resumen regenerable durante el día (puede ejecutarse múltiples veces)
+  - `nightly`: Resumen generado al final del día (típicamente por cron)
 - `--scope` (opcional, default: `day`): Alcance del resumen
   - `day`: Resumen del día completo (único soportado en v0)
 - `--day-id` (opcional): Día específico en formato `YYYY-MM-DD` (default: día actual)
@@ -67,25 +61,13 @@ Artefacto: artifacts/summaries/2026-01-17/nightly_20260117T230000.md
 
 ### Rolling (cada 15 minutos)
 
-**Recomendado**: Usa `dia summary rolling`
-
 ```cron
-# Comando nuevo (recomendado)
-*/15 * * * * dia summary rolling --data-root /path/to/data >> /path/to/logs/cron.log 2>&1
-
-# Comando legacy (compatible)
 */15 * * * * dia summarize --scope day --mode rolling --data-root /path/to/data >> /path/to/logs/cron.log 2>&1
 ```
 
 ### Nightly (una vez al día, 23:00)
 
-**Recomendado**: Usa `dia summary nightly`
-
 ```cron
-# Comando nuevo (recomendado)
-0 23 * * * dia summary nightly --data-root /path/to/data >> /path/to/logs/cron.log 2>&1
-
-# Comando legacy (compatible)
 0 23 * * * dia summarize --scope day --mode nightly --data-root /path/to/data >> /path/to/logs/cron.log 2>&1
 ```
 
@@ -121,9 +103,3 @@ El resumen incluye:
 ### ON_TRACK
 - Sesiones cerradas y progreso normal
 - Sin bloqueadores detectados
-
-## Referencias
-
-- [dia summary rolling](dia-summary.md#dia-summary-rolling) - Comando nuevo recomendado para rolling
-- [dia summary nightly](dia-summary.md#dia-summary-nightly) - Comando nuevo recomendado para nightly
-- [dia summary](dia-summary.md) - Documentación completa de los nuevos comandos

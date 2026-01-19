@@ -15,14 +15,12 @@ Guía práctica de cómo usar el CLI `dia` mientras desarrollas funcionalidades,
 # Desde el directorio del proyecto /dia
 cd /Users/joseassizalcarazbaxter/Developer/dia
 
-# Iniciar sesión con intención clara (comando nuevo recomendado)
-dia session start \
+# Iniciar sesión con intención clara
+dia start \
   --data-root ./data \
   --area it \
   --intent "Implementar Feature Board Fase 1" \
   --dod "BoardView fullscreen funcional con toggle desde Zona viva, persistencia en localStorage, componentes BoardElement renderizando correctamente según tipo, stores de Svelte operativos, y estilos fullscreen aplicados sin errores en consola"
-
-# Nota: 'dia start' también funciona (legacy)
 ```
 
 **Tips**:
@@ -95,10 +93,7 @@ Archivos modificados:
 Al terminar el trabajo del día o completar una feature:
 
 ```bash
-# Comando nuevo recomendado
-dia session end --data-root ./data --area it
-
-# Nota: 'dia end' también funciona (legacy)
+dia end --data-root ./data --area it
 ```
 
 Esto genera:
@@ -114,14 +109,11 @@ Esto genera:
 #### Inicio de Sesión
 
 ```bash
-# Comando nuevo recomendado
-dia session start \
+dia start \
   --data-root ./data \
   --area it \
   --intent "Implementar Feature Board Fase 1: infraestructura base" \
   --dod "BoardView fullscreen funcional con toggle desde Zona viva, persistencia en localStorage, componentes BoardElement renderizando correctamente según tipo, stores de Svelte operativos, y estilos fullscreen aplicados sin errores en consola"
-
-# Nota: 'dia start' también funciona (legacy)
 ```
 
 #### Durante Implementación
@@ -158,10 +150,7 @@ dia session start \
 #### Cierre de Sesión
 
 ```bash
-# Comando nuevo recomendado
-dia session end --data-root ./data --area it
-
-# Nota: 'dia end' también funciona (legacy)
+dia end --data-root ./data --area it
 ```
 
 Revisa los archivos generados:
@@ -225,21 +214,19 @@ Puedes tener múltiples sesiones en un día:
 
 ```bash
 # Sesión 1: Mañana
-dia session start --intent "Implementar BoardView" ...
+dia start --intent "Implementar BoardView" ...
 
 # Trabajar...
 
-dia session end
+dia end
 
 # Sesión 2: Tarde
-dia session start --intent "Agregar drag & drop" ...
+dia start --intent "Agregar drag & drop" ...
 
 # Trabajar...
 
-dia session end
+dia end
 ```
-
-**Nota**: Los comandos legacy (`dia start`, `dia end`) también funcionan.
 
 Cada sesión genera su propio `CIERRE_SXX.md` y `LIMPIEZA_SXX.md`.
 
@@ -249,20 +236,20 @@ Cada sesión genera su propio `CIERRE_SXX.md` y `LIMPIEZA_SXX.md`.
 
 ### Workflow Recomendado
 
-1. **Iniciar sesión**: `dia session start` (o `dia start` legacy)
+1. **Iniciar sesión**: `dia start`
 2. **Desarrollar**: Hacer cambios, probar
 3. **Capturar errores**: `dia cap` cuando ocurran
 4. **Aplicar fix**: Corregir el error en el código
 5. **Linkear fix**: `dia fix` para asociar el fix al error
 6. **Checkpoint**: `dia pre-feat` antes de commit importante
 7. **Commit**: Usar mensaje sugerido por `dia pre-feat`
-8. **Cerrar sesión**: `dia session end` (o `dia end` legacy) al terminar
+8. **Cerrar sesión**: `dia end` al terminar
 
 ### Ejemplo Completo
 
 ```bash
-# 1. Iniciar (comando nuevo recomendado)
-dia session start --intent "Fix: convertir TypeScript a JavaScript" --dod "Sin errores de compilación" --data-root ./data --area it
+# 1. Iniciar
+dia start --intent "Fix: convertir TypeScript a JavaScript" --dod "Sin errores de compilación" --data-root ./data --area it
 
 # 2. Hacer cambios
 # ... editar archivos ...
@@ -286,8 +273,8 @@ dia pre-feat --data-root ./data --area it
 git add .
 git commit -m "🦾 fix: convertir componentes TypeScript a JavaScript [#sesion S02]"
 
-# 8. Cerrar (comando nuevo recomendado)
-dia session end --data-root ./data --area it
+# 8. Cerrar
+dia end --data-root ./data --area it
 ```
 
 ### Workflow de Errores: Captura → Fix → Commit
@@ -340,12 +327,9 @@ dia session end --data-root ./data --area it
 
 ## Referencias
 
-- [dia session](dia-session.md) - Gestión de sesiones (comandos nuevos recomendados)
-- [dia day](dia-day.md) - Gestión de días/jornadas
-- [dia summary](dia-summary.md) - Generación de resúmenes
-- [dia start](dia-start.md) - Documentación completa de `dia start` (legacy)
+- [dia start](dia-start.md) - Documentación completa de `dia start`
 - [dia pre-feat](dia-pre-feat.md) - Documentación completa de `dia pre-feat`
-- [dia end](dia-end.md) - Documentación completa de `dia end` (legacy)
+- [dia end](dia-end.md) - Documentación completa de `dia end`
 - [dia cap](dia-cap.md) - Documentación completa de `dia cap`
 - [dia fix](dia-fix.md) - Documentación completa de `dia fix`
 
