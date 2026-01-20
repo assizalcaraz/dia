@@ -3,14 +3,20 @@ import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
+from zoneinfo import ZoneInfo
+
+# Zona horaria: Buenos Aires, Argentina (UTC-3)
+TZ_BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def now_iso() -> str:
-    return datetime.now().astimezone().isoformat()
+    """Retorna timestamp ISO 8601 con timezone de Buenos Aires."""
+    return datetime.now(TZ_BUENOS_AIRES).isoformat()
 
 
 def day_id() -> str:
-    return datetime.now().astimezone().date().isoformat()
+    """Retorna el día actual (YYYY-MM-DD) en zona horaria de Buenos Aires."""
+    return datetime.now(TZ_BUENOS_AIRES).date().isoformat()
 
 
 def read_json_lines(path: Path) -> Iterable[dict[str, Any]]:

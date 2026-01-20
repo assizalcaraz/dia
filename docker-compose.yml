@@ -9,6 +9,8 @@ services:
       # DIA_DATA_ROOT apunta al volumen montado del directorio global
       # Esto permite que el servidor acceda a los mismos datos que el CLI
       - DIA_DATA_ROOT=/data-global
+      # Zona horaria: Buenos Aires, Argentina (UTC-3)
+      - TZ=America/Argentina/Buenos_Aires
     volumes:
       # Montar el directorio global de dia (macOS) - mismo que usa el CLI
       - ${HOME}/Library/Application Support/dia:/data-global

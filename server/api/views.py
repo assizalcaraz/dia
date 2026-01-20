@@ -3,9 +3,13 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.http import JsonResponse
+
+# Zona horaria: Buenos Aires, Argentina (UTC-3)
+TZ_BUENOS_AIRES = ZoneInfo("America/Argentina/Buenos_Aires")
 
 
 def _events_path() -> Path:
@@ -21,8 +25,8 @@ def _event_id() -> str:
 
 
 def _now_iso() -> str:
-    """Retorna timestamp ISO 8601 con timezone."""
-    return datetime.now().astimezone().isoformat()
+    """Retorna timestamp ISO 8601 con timezone de Buenos Aires."""
+    return datetime.now(TZ_BUENOS_AIRES).isoformat()
 
 
 def _append_line(path: Path, data: dict[str, Any]) -> None:
@@ -147,14 +151,18 @@ def active_session(request):
     from datetime import datetime
     
     events = _read_events()
+    today = datetime.now(TZ_BUENOS_AIRES).date().isoformat()
+    
+    # Filtrar eventos del día actual primero
+    today_events = [e for e in events if e.get("session", {}).get("day_id") == today]
+    
     sessions: dict[str, dict[str, Any]] = {}
     ended_sessions: set[str] = set()  # Track sessions that have ended (key: session_id:repo_path)
-    today = datetime.now().astimezone().date().isoformat()
     anomalies: list[dict[str, Any]] = []
     
-    # Primero, identificar todas las sesiones que han terminado
+    # Primero, identificar todas las sesiones que han terminado (del día actual)
     # Usar clave compuesta session_id:repo_path para distinguir sesiones en diferentes repos
-    for event in events:
+    for event in today_events:
         if event.get("type") in ("SessionEnded", "SessionForceClosed"):
             session_id = event.get("session", {}).get("session_id")
             repo_path = event.get("repo", {}).get("path", "")
@@ -163,8 +171,8 @@ def active_session(request):
                 key = f"{session_id}:{repo_path}"
                 ended_sessions.add(key)
     
-    # Ahora construir sesiones y verificar estado
-    for event in events:
+    # Ahora construir sesiones y verificar estado (solo del día actual)
+    for event in today_events:
         event_type = event.get("type")
         if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
             session_id = event.get("session", {}).get("session_id")
@@ -193,14 +201,6 @@ def active_session(request):
                     "resumed_ts": None,
                 }
                 sessions[key] = session_data
-                
-                # Detectar anomalía: sesión vieja sin cerrar
-                if day_id != today:
-                    anomalies.append({
-                        "session_id": session_id,
-                        "day_id": day_id,
-                        "type": "orphan_old_session",
-                    })
         if event_type == "SessionPaused":
             session_id = event.get("session", {}).get("session_id")
             repo_path = event.get("repo", {}).get("path", "")
@@ -405,7 +405,7 @@ def day_today(request):
     """Retorna información del día actual: sesiones, estado, etc."""
     from datetime import datetime
     
-    day_id_val = datetime.now().astimezone().date().isoformat()
+    day_id_val = datetime.now(TZ_BUENOS_AIRES).date().isoformat()
     events = _read_events()
     
     # Filtrar eventos del día
@@ -507,7 +507,7 @@ def jornada_human_update(request, day_id: str):
     import json
     
     # Validar que es día actual
-    today = datetime.now().astimezone().date().isoformat()
+    today = datetime.now(TZ_BUENOS_AIRES).date().isoformat()
     if day_id != today:
         return JsonResponse(
             {"error": "Solo se puede editar la bitácora del día actual"},
@@ -649,8 +649,19 @@ def captures_recent(request):
 
 
 def errors_open(request):
-    """Retorna lista de errores sin fix (último CaptureCreated sin FixLinked por sesión)."""
+    """Retorna lista de errores sin fix (último CaptureCreated sin FixLinked por sesión).
+    
+    Por defecto, muestra solo errores del día actual. Se puede filtrar por día usando
+    el parámetro query 'day_id'.
+    """
+    from datetime import datetime
+    
     events = _read_events()
+    today = datetime.now(TZ_BUENOS_AIRES).date().isoformat()
+    
+    # Filtrar por día actual por defecto, o por el día especificado en query parameter
+    day_filter = request.GET.get("day_id", today)
+    events = [e for e in events if e.get("session", {}).get("day_id") == day_filter]
     
     # Recopilar todos los CaptureCreated
     captures: dict[str, dict[str, Any]] = {}

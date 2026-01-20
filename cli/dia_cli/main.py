@@ -1478,7 +1478,8 @@ def cmd_repo_snapshot(args: argparse.Namespace) -> int:
 
     # Guardar artifact
     from datetime import datetime
-    timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+    from .utils import TZ_BUENOS_AIRES
+    timestamp_str = datetime.now(TZ_BUENOS_AIRES).strftime("%Y%m%d_%H%M%S")
     snapshot_dir = config.artifacts_dir(root) / "snapshots"
     snapshot_dir.mkdir(parents=True, exist_ok=True)
     snapshot_file = snapshot_dir / f"repo_structure_{timestamp_str}.json"
