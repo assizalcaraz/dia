@@ -1,4 +1,6 @@
 import json
+import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -8,6 +10,49 @@ from django.http import JsonResponse
 
 def _events_path() -> Path:
     return Path(settings.DATA_ROOT) / "index" / "events.ndjson"
+
+
+def _sessions_path() -> Path:
+    return Path(settings.DATA_ROOT) / "index" / "sessions.ndjson"
+
+
+def _event_id() -> str:
+    return f"evt_{uuid.uuid4().hex}"
+
+
+def _now_iso() -> str:
+    """Retorna timestamp ISO 8601 con timezone."""
+    return datetime.now().astimezone().isoformat()
+
+
+def _append_line(path: Path, data: dict[str, Any]) -> None:
+    """Añade una línea JSON al archivo NDJSON."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(data, ensure_ascii=False) + "\n")
+
+
+def _build_event(
+    event_type: str,
+    session: dict[str, Any],
+    actor: dict[str, Any],
+    project: dict[str, Any],
+    repo: dict[str, Any] | None,
+    payload: dict[str, Any] | None = None,
+    links: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Construye un evento en formato NDJSON."""
+    return {
+        "event_id": _event_id(),
+        "ts": _now_iso(),
+        "type": event_type,
+        "session": session,
+        "actor": actor,
+        "project": project,
+        "repo": repo,
+        "payload": payload or {},
+        "links": links or [],
+    }
 
 
 def _read_events() -> list[dict[str, Any]]:
@@ -646,14 +691,17 @@ def errors_open(request):
     # Convertir a lista y formatear
     result = []
     for capture in open_errors.values():
+        capture_event_id = capture.get("event_id")
+        has_fix = capture_event_id in fixed_event_ids
         result.append({
-            "event_id": capture.get("event_id"),
+            "event_id": capture_event_id,
             "ts": capture.get("ts"),
             "session": capture.get("session"),
             "title": capture.get("payload", {}).get("title"),
             "error_hash": capture.get("payload", {}).get("error_hash"),
             "artifact_ref": capture.get("payload", {}).get("artifact_ref"),
             "links": capture.get("links", []),
+            "has_fix": has_fix,
         })
     
     result.sort(key=lambda x: x.get("ts", ""), reverse=True)
@@ -872,3 +920,286 @@ def endpoints_doc(request):
     
     content = doc_file.read_text(encoding="utf-8")
     return JsonResponse({"path": doc_path, "content": content})
+
+
+def session_pause(request):
+    """Pausa la sesión activa actual."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    
+    events = _read_events()
+    events_path = _events_path()
+    sessions_path = _sessions_path()
+    
+    # Importar funciones de sesión del CLI (necesitamos importarlas o replicar lógica)
+    # Por ahora, replicamos la lógica básica
+    from datetime import datetime as dt
+    today = dt.now().astimezone().date().isoformat()
+    
+    # Buscar sesión activa (no paused, no ended)
+    active_session_data = None
+    sessions_dict = {}
+    ended_sessions = set()
+    
+    for event in events:
+        event_type = event.get("type")
+        if event_type in ("SessionEnded", "SessionForceClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            if session_id:
+                ended_sessions.add(f"{session_id}:{repo_path}")
+        
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key not in ended_sessions:
+                sessions_dict[key] = {
+                    "session_id": session_id,
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "start_ts": event.get("ts"),
+                    "paused_ts": None,
+                    "resumed_ts": None,
+                    "repo": event.get("repo"),
+                }
+        
+        if event_type == "SessionPaused":
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions_dict:
+                sessions_dict[key]["paused_ts"] = event.get("ts")
+        
+        if event_type == "SessionResumed":
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions_dict:
+                sessions_dict[key]["resumed_ts"] = event.get("ts")
+    
+    # Encontrar sesión activa (no ended, no paused o resumed después de paused)
+    for key, session_data in sessions_dict.items():
+        if key in ended_sessions:
+            continue
+        paused_ts = session_data.get("paused_ts")
+        resumed_ts = session_data.get("resumed_ts")
+        is_paused = False
+        if paused_ts:
+            if not resumed_ts:
+                is_paused = True
+            elif paused_ts > resumed_ts:
+                is_paused = True
+        if not is_paused:
+            active_session_data = session_data
+            break
+    
+    if not active_session_data:
+        return JsonResponse({"error": "No hay sesión activa"}, status=400)
+    
+    session_id = active_session_data["session_id"]
+    day_id_val = active_session_data["day_id"]
+    
+    # Crear evento SessionPaused
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    }
+    
+    pause_event = _build_event(
+        "SessionPaused",
+        session=session,
+        actor={
+            "user_id": "u_web",
+            "user_type": "human",
+            "role": "desarrollador",
+            "client": "web",
+        },
+        project={"tag": None, "area": "it", "context": ""},
+        repo=active_session_data.get("repo"),
+        payload={
+            "cmd": "web pause",
+            "reason": None,
+        },
+    )
+    
+    _append_line(events_path, pause_event)
+    _append_line(sessions_path, pause_event)
+    
+    return JsonResponse({"status": "paused", "session_id": session_id})
+
+
+def session_resume(request):
+    """Reanuda una sesión pausada."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    
+    events = _read_events()
+    events_path = _events_path()
+    sessions_path = _sessions_path()
+    
+    # Buscar sesión pausada (no ended, paused sin resume más reciente)
+    paused_session_data = None
+    sessions_dict = {}
+    ended_sessions = set()
+    
+    for event in events:
+        event_type = event.get("type")
+        if event_type in ("SessionEnded", "SessionForceClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            if session_id:
+                ended_sessions.add(f"{session_id}:{repo_path}")
+        
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key not in ended_sessions:
+                sessions_dict[key] = {
+                    "session_id": session_id,
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "start_ts": event.get("ts"),
+                    "paused_ts": None,
+                    "resumed_ts": None,
+                    "repo": event.get("repo"),
+                }
+        
+        if event_type == "SessionPaused":
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions_dict:
+                sessions_dict[key]["paused_ts"] = event.get("ts")
+        
+        if event_type == "SessionResumed":
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key in sessions_dict:
+                sessions_dict[key]["resumed_ts"] = event.get("ts")
+    
+    # Encontrar sesión pausada
+    for key, session_data in sessions_dict.items():
+        if key in ended_sessions:
+            continue
+        paused_ts = session_data.get("paused_ts")
+        resumed_ts = session_data.get("resumed_ts")
+        is_paused = False
+        if paused_ts:
+            if not resumed_ts:
+                is_paused = True
+            elif paused_ts > resumed_ts:
+                is_paused = True
+        if is_paused:
+            paused_session_data = session_data
+            break
+    
+    if not paused_session_data:
+        return JsonResponse({"error": "No hay sesión pausada"}, status=400)
+    
+    session_id = paused_session_data["session_id"]
+    day_id_val = paused_session_data["day_id"]
+    
+    # Crear evento SessionResumed
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+    }
+    
+    resume_event = _build_event(
+        "SessionResumed",
+        session=session,
+        actor={
+            "user_id": "u_web",
+            "user_type": "human",
+            "role": "desarrollador",
+            "client": "web",
+        },
+        project={"tag": None, "area": "it", "context": ""},
+        repo=paused_session_data.get("repo"),
+        payload={
+            "cmd": "web resume",
+        },
+    )
+    
+    _append_line(events_path, resume_event)
+    _append_line(sessions_path, resume_event)
+    
+    return JsonResponse({"status": "resumed", "session_id": session_id})
+
+
+def session_end(request):
+    """Finaliza la sesión activa actual."""
+    if request.method != "POST":
+        return JsonResponse({"error": "Método no permitido"}, status=405)
+    
+    events = _read_events()
+    events_path = _events_path()
+    sessions_path = _sessions_path()
+    
+    # Buscar sesión activa o pausada (no ended)
+    current_session_data = None
+    sessions_dict = {}
+    ended_sessions = set()
+    
+    for event in events:
+        event_type = event.get("type")
+        if event_type in ("SessionEnded", "SessionForceClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            if session_id:
+                ended_sessions.add(f"{session_id}:{repo_path}")
+        
+        if event_type in ("SessionStarted", "SessionStartedAfterDayClosed"):
+            session_id = event.get("session", {}).get("session_id")
+            repo_path = event.get("repo", {}).get("path", "")
+            key = f"{session_id}:{repo_path}"
+            if key not in ended_sessions:
+                sessions_dict[key] = {
+                    "session_id": session_id,
+                    "day_id": event.get("session", {}).get("day_id"),
+                    "start_ts": event.get("ts"),
+                    "paused_ts": None,
+                    "resumed_ts": None,
+                    "repo": event.get("repo"),
+                }
+    
+    # Encontrar sesión actual (no ended)
+    for key, session_data in sessions_dict.items():
+        if key not in ended_sessions:
+            current_session_data = session_data
+            break
+    
+    if not current_session_data:
+        return JsonResponse({"error": "No hay sesión activa o pausada"}, status=400)
+    
+    session_id = current_session_data["session_id"]
+    day_id_val = current_session_data["day_id"]
+    
+    # Crear evento SessionEnded
+    session = {
+        "day_id": day_id_val,
+        "session_id": session_id,
+        "result": None,
+    }
+    
+    end_event = _build_event(
+        "SessionEnded",
+        session=session,
+        actor={
+            "user_id": "u_web",
+            "user_type": "human",
+            "role": "desarrollador",
+            "client": "web",
+        },
+        project={"tag": None, "area": "it", "context": ""},
+        repo=current_session_data.get("repo"),
+        payload={
+            "cmd": "web end",
+        },
+    )
+    
+    _append_line(events_path, end_event)
+    _append_line(sessions_path, end_event)
+    
+    return JsonResponse({"status": "ended", "session_id": session_id})

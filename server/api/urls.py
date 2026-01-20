@@ -24,5 +24,8 @@ urlpatterns = [
     path("captures/recent/", views.captures_recent, name="captures_recent"),
     path("captures/errors/open/", views.errors_open, name="errors_open"),
     path("chain/latest/", views.chain_latest, name="chain_latest"),
+    path("session/pause/", views.session_pause, name="session_pause"),
+    path("session/resume/", views.session_resume, name="session_resume"),
+    path("session/end/", views.session_end, name="session_end"),
     path("endpoints.md", views.endpoints_doc, name="endpoints_doc"),
 ]

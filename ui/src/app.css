@@ -690,3 +690,175 @@ body {
   background: var(--color-bg);
   box-shadow: var(--shadow-sm);
 }
+
+/* Time tracker card */
+.time-tracker-card {
+  margin-bottom: var(--spacing-md);
+}
+
+.time-display {
+  font-size: 24px;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--color-text);
+}
+
+/* Session controls */
+.session-controls-card {
+  margin-bottom: var(--spacing-md);
+}
+
+.session-controls {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+.btn-session {
+  padding: var(--spacing-sm) var(--spacing-md);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.btn-session:hover {
+  background: var(--color-border);
+}
+
+.btn-pause {
+  border-color: #ff9800;
+}
+
+.btn-pause:hover {
+  background: #fff3e0;
+}
+
+.btn-resume {
+  border-color: #4caf50;
+}
+
+.btn-resume:hover {
+  background: #e8f5e9;
+}
+
+.btn-end {
+  border-color: #d32f2f;
+}
+
+.btn-end:hover {
+  background: #ffebee;
+}
+
+/* Errors accordion */
+.errors-accordion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.error-accordion-item {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.error-accordion-header {
+  width: 100%;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface);
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: 14px;
+  transition: var(--transition);
+}
+
+.error-accordion-header:hover {
+  background: var(--color-border);
+}
+
+.error-accordion-header.expanded {
+  background: var(--color-border);
+}
+
+.error-status-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.error-title-text {
+  flex: 1;
+  font-weight: 500;
+  color: var(--color-text);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.error-meta-badge {
+  padding: 2px 6px;
+  background: var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.error-expand-icon {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.error-accordion-content {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.error-content-details {
+  margin-bottom: var(--spacing-md);
+}
+
+.error-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  padding-top: var(--spacing-sm);
+  border-top: 1px solid var(--color-border);
+}
+
+.btn-error-archive,
+.btn-error-copy {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-error-archive:hover,
+.btn-error-copy:hover {
+  background: var(--color-border);
+}
+
+.errors-more {
+  padding: var(--spacing-sm);
+  text-align: center;
+  font-size: 12px;
+}

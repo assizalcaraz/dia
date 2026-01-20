@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import BitacoraViewer from "./components/BitacoraViewer.svelte";
   import SummariesViewer from "./components/SummariesViewer.svelte";
   import DocsViewer from "./components/DocsViewer.svelte";
@@ -26,6 +26,10 @@
   let boardOpen = false; // Control de visibilidad del board
   let zonaVivaElement = null; // Referencia al contenedor de zona viva para preservar scroll
   let temporalNotesCount = 0; // Contador de notas temporales
+  let archivedErrors = new Set(); // IDs de errores archivados
+  let expandedErrors = new Set(); // IDs de errores expandidos en acordeón
+  let dayElapsedMinutes = null; // Tiempo transcurrido desde inicio de jornada
+  let dayElapsedInterval = null; // Interval para actualizar tiempo transcurrido
 
   const fetchJson = async (path) => {
     const response = await fetch(`${API_BASE}${path}`);
@@ -33,6 +37,117 @@
       throw new Error(`HTTP ${response.status}`);
     }
     return response.json();
+  };
+
+  const fetchPost = async (path, body = {}) => {
+    const response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    return response.json();
+  };
+
+  // Cargar errores archivados desde localStorage
+  const loadArchivedErrors = () => {
+    try {
+      const stored = localStorage.getItem(`dia_archived_errors_${today}`);
+      if (stored) {
+        archivedErrors = new Set(JSON.parse(stored));
+      }
+    } catch (e) {
+      console.error("Error cargando errores archivados:", e);
+    }
+  };
+
+  // Guardar errores archivados en localStorage
+  const saveArchivedErrors = () => {
+    try {
+      localStorage.setItem(`dia_archived_errors_${today}`, JSON.stringify(Array.from(archivedErrors)));
+    } catch (e) {
+      console.error("Error guardando errores archivados:", e);
+    }
+  };
+
+  // Archivar un error
+  const archiveError = (errorId) => {
+    archivedErrors.add(errorId);
+    saveArchivedErrors();
+  };
+
+  // Calcular tiempo transcurrido desde inicio de jornada
+  const calculateDayElapsed = () => {
+    if (!dayToday || !dayToday.sessions || dayToday.sessions.length === 0) {
+      dayElapsedMinutes = null;
+      return;
+    }
+    
+    // Encontrar la primera sesión del día
+    const firstSession = dayToday.sessions[dayToday.sessions.length - 1]; // Más antigua
+    if (!firstSession || !firstSession.start_ts) {
+      dayElapsedMinutes = null;
+      return;
+    }
+    
+    const startTime = new Date(firstSession.start_ts);
+    const now = new Date();
+    const diffMs = now - startTime;
+    dayElapsedMinutes = Math.floor(diffMs / 60000);
+  };
+
+  // Control de sesión: pausar
+  const pauseSession = async () => {
+    if (!confirm("¿Pausar la sesión actual?")) {
+      return;
+    }
+    try {
+      await fetchPost("/session/pause/");
+      await loadIncremental();
+    } catch (error) {
+      alert(`Error al pausar sesión: ${error.message}`);
+    }
+  };
+
+  // Control de sesión: retomar
+  const resumeSession = async () => {
+    if (!confirm("¿Retomar la sesión pausada?")) {
+      return;
+    }
+    try {
+      await fetchPost("/session/resume/");
+      await loadIncremental();
+    } catch (error) {
+      alert(`Error al retomar sesión: ${error.message}`);
+    }
+  };
+
+  // Control de sesión: finalizar
+  const endSession = async () => {
+    if (!confirm("¿Finalizar la sesión actual? Esta acción no se puede deshacer.")) {
+      return;
+    }
+    try {
+      await fetchPost("/session/end/");
+      await loadIncremental();
+    } catch (error) {
+      alert(`Error al finalizar sesión: ${error.message}`);
+    }
+  };
+
+  // Verificar si la sesión está pausada
+  const isSessionPaused = () => {
+    if (!currentSession) return false;
+    const pausedTs = currentSession.paused_ts;
+    const resumedTs = currentSession.resumed_ts;
+    if (!pausedTs) return false;
+    if (!resumedTs) return true;
+    return pausedTs > resumedTs;
   };
 
   const getAssessmentEmoji = (assessment) => {
@@ -67,6 +182,7 @@
       metrics = metricsRes || {};
       openErrors = errorsRes.errors || [];
       dayToday = dayTodayRes || null;
+      calculateDayElapsed();
     } catch (error) {
       console.error(error);
     } finally {
@@ -104,6 +220,9 @@
       dayToday = dayTodayRes || null;
       temporalNotesCount = (temporalNotesRes?.files || []).length;
       
+      // Calcular tiempo transcurrido del día
+      calculateDayElapsed();
+      
       // Restaurar posición de scroll después de la actualización
       requestAnimationFrame(() => {
         if (zonaVivaElement) {
@@ -128,8 +247,16 @@
   let intervalId = null;
 
   onMount(() => {
+    // Cargar errores archivados
+    loadArchivedErrors();
+    
     // Carga inicial completa
     load();
+    
+    // Iniciar actualización de tiempo transcurrido cada minuto
+    dayElapsedInterval = setInterval(() => {
+      calculateDayElapsed();
+    }, 60000);
     
     // Función para iniciar polling incremental
     const startPolling = () => {
@@ -143,6 +270,12 @@
         clearInterval(intervalId);
         intervalId = null;
       }
+    };
+    
+    // Cleanup al desmontar
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+      if (dayElapsedInterval) clearInterval(dayElapsedInterval);
     };
     
     // Manejar visibilidad de la página (Page Visibility API)
@@ -483,105 +616,49 @@
         {/if}
         <h3>Errores abiertos</h3>
         {#if openErrors.length > 0}
+          {@const visibleErrors = openErrors.filter(e => !archivedErrors.has(e.event_id))}
+          {@const resolvedErrors = visibleErrors.filter(e => e.has_fix)}
+          {@const unresolvedErrors = visibleErrors.filter(e => !e.has_fix)}
+          {#if visibleErrors.length > 0}
           <div class="errors-container">
             <div class="errors-header">
-              <div class="errors-header-title">⚠️ {openErrors.length} {openErrors.length === 1 ? 'error' : 'errores'} abierto{openErrors.length === 1 ? '' : 's'}</div>
-              {#if openErrors.length > 10}
-                <div class="errors-header-subtitle">Mostrando los 10 más recientes</div>
-              {/if}
+              <div class="errors-header-title">
+                ⚠️ {unresolvedErrors.length} {unresolvedErrors.length === 1 ? 'error' : 'errores'} sin resolver
+                {#if resolvedErrors.length > 0}
+                  <span class="muted">• {resolvedErrors.length} resuelto{resolvedErrors.length === 1 ? '' : 's'}</span>
+                {/if}
+              </div>
             </div>
-            <div class="errors-stack">
-              {#each openErrors.slice(0, 10) as error, index}
+            <div class="errors-accordion">
+              {#each unresolvedErrors.slice(0, 10) as error}
+                {@const errorId = error.event_id}
+                {@const isExpanded = expandedErrors.has(errorId)}
                 {@const errorTitle = error.title || "Sin título"}
                 {@const errorSession = error.session?.session_id || "N/A"}
                 {@const errorDate = error.ts ? new Date(error.ts).toLocaleString() : "N/A"}
                 
-                <div 
-                  class="error-item"
-                  style="z-index: {openErrors.length - index};"
-                >
+                <div class="error-accordion-item">
                   <button
-                    class="error-tab"
-                    on:mouseenter={(e) => {
-                      const button = e.currentTarget;
-                      const tooltip = button.querySelector('.error-content');
-                      if (tooltip) {
-                        const existingTimeout = tooltip.dataset.timeoutId;
-                        if (existingTimeout) {
-                          clearTimeout(parseInt(existingTimeout));
-                          delete tooltip.dataset.timeoutId;
-                        }
-                        handleErrorTooltipPosition(e, tooltip);
-                        tooltip.style.pointerEvents = 'auto';
-                        tooltip.style.opacity = '1';
-                        tooltip.style.visibility = 'visible';
-                      }
-                    }}
-                    on:mouseleave={(e) => {
-                      const button = e.currentTarget;
-                      const tooltip = button.querySelector('.error-content');
-                      if (tooltip) {
-                        const timeout = setTimeout(() => {
-                          const tooltipRect = tooltip.getBoundingClientRect();
-                          const mouseX = e.clientX;
-                          const mouseY = e.clientY;
-                          const isOverTooltip = (
-                            mouseX >= tooltipRect.left - 10 &&
-                            mouseX <= tooltipRect.right + 10 &&
-                            mouseY >= tooltipRect.top - 10 &&
-                            mouseY <= tooltipRect.bottom + 10
-                          );
-                          if (!isOverTooltip) {
-                            tooltip.style.opacity = '0';
-                            setTimeout(() => {
-                              tooltip.style.visibility = 'hidden';
-                              tooltip.style.pointerEvents = 'none';
-                            }, 200);
-                          }
-                        }, 500);
-                        tooltip.dataset.timeoutId = timeout.toString();
-                      }
-                    }}
+                    class="error-accordion-header"
+                    class:expanded={isExpanded}
                     type="button"
+                    on:click={() => {
+                      if (isExpanded) {
+                        expandedErrors.delete(errorId);
+                      } else {
+                        expandedErrors.add(errorId);
+                      }
+                      expandedErrors = expandedErrors; // Trigger reactivity
+                    }}
                   >
-                    <span class="error-tab-title">{errorTitle}</span>
-                    <div 
-                      class="error-content"
-                      on:mouseenter={(e) => {
-                        const tooltip = e.currentTarget;
-                        const existingTimeout = tooltip.dataset.timeoutId;
-                        if (existingTimeout) {
-                          clearTimeout(parseInt(existingTimeout));
-                          delete tooltip.dataset.timeoutId;
-                        }
-                        tooltip.style.opacity = '1';
-                        tooltip.style.visibility = 'visible';
-                        tooltip.style.pointerEvents = 'auto';
-                      }}
-                      on:mouseleave={(e) => {
-                        const tooltip = e.currentTarget;
-                        const timeout = setTimeout(() => {
-                          tooltip.style.opacity = '0';
-                          setTimeout(() => {
-                            tooltip.style.visibility = 'hidden';
-                            tooltip.style.pointerEvents = 'none';
-                          }, 200);
-                        }, 500);
-                        tooltip.dataset.timeoutId = timeout.toString();
-                      }}
-                    >
-                      <div class="error-content-header">
-                        <h4 class="error-content-title">{errorTitle}</h4>
-                        <button
-                          class="error-copy-btn"
-                          type="button"
-                          on:click={() => copyErrorContent(error)}
-                          title="Copiar información del error"
-                        >
-                          📋
-                        </button>
-                      </div>
-                      <div class="error-content-meta">
+                    <span class="error-status-icon">{error.has_fix ? '✅' : '⚠️'}</span>
+                    <span class="error-title-text">{errorTitle}</span>
+                    <span class="error-meta-badge">{errorSession}</span>
+                    <span class="error-expand-icon">{isExpanded ? '▼' : '▶'}</span>
+                  </button>
+                  {#if isExpanded}
+                    <div class="error-accordion-content">
+                      <div class="error-content-details">
                         <div class="error-meta-item">
                           <span class="error-meta-label">Sesión:</span>
                           <span class="error-meta-value">{errorSession}</span>
@@ -603,12 +680,40 @@
                           </div>
                         {/if}
                       </div>
+                      <div class="error-actions">
+                        <button
+                          class="btn-error-archive"
+                          type="button"
+                          on:click={() => archiveError(errorId)}
+                          title="Archivar este error"
+                        >
+                          📦 Archivar
+                        </button>
+                        <button
+                          class="btn-error-copy"
+                          type="button"
+                          on:click={() => copyErrorContent(error)}
+                          title="Copiar información del error"
+                        >
+                          📋 Copiar
+                        </button>
+                      </div>
                     </div>
-                  </button>
+                  {/if}
                 </div>
               {/each}
+              {#if unresolvedErrors.length > 10}
+                <div class="errors-more">
+                  <span class="muted">... y {unresolvedErrors.length - 10} más</span>
+                </div>
+              {/if}
             </div>
           </div>
+          {:else}
+            <div class="empty-state">
+              <p class="muted">No hay errores visibles (todos archivados).</p>
+            </div>
+          {/if}
         {:else}
           <div class="empty-state">
             <p class="muted">No hay errores abiertos.</p>
@@ -670,6 +775,60 @@
         </div>
       {:else if zonaVivaTab === "sesion"}
         {#if currentSession}
+          <!-- Visualizador de tiempo transcurrido -->
+          {#if dayElapsedMinutes !== null}
+            <div class="card time-tracker-card">
+              <div class="card-header">
+                <div class="mono">⏱️ Tiempo transcurrido</div>
+              </div>
+              <div class="card-body">
+                <div class="time-display">
+                  {formatElapsed(dayElapsedMinutes)}
+                </div>
+                <div class="muted" style="font-size: 12px; margin-top: 0.5rem;">
+                  Desde inicio de jornada
+                </div>
+              </div>
+            </div>
+          {/if}
+          
+          <!-- Controles de sesión -->
+          <div class="card session-controls-card">
+            <div class="card-header">
+              <div class="mono">Control de sesión</div>
+            </div>
+            <div class="card-body">
+              <div class="session-controls">
+                {#if isSessionPaused()}
+                  <button 
+                    class="btn-session btn-resume"
+                    on:click={resumeSession}
+                    title="Retomar sesión pausada"
+                  >
+                    ▶️ Retomar sesión
+                  </button>
+                {:else if currentSession}
+                  <button 
+                    class="btn-session btn-pause"
+                    on:click={pauseSession}
+                    title="Pausar sesión actual"
+                  >
+                    ⏸️ Pausar sesión
+                  </button>
+                {/if}
+                {#if currentSession}
+                  <button 
+                    class="btn-session btn-end"
+                    on:click={endSession}
+                    title="Finalizar sesión actual"
+                  >
+                    ⏹️ Finalizar sesión
+                  </button>
+                {/if}
+              </div>
+            </div>
+          </div>
+          
           <ErrorFixCommitChain apiBase={API_BASE} />
           <SessionObjectives session={currentSession} />
           <div class="card session-card">
@@ -688,6 +847,12 @@
                   <span class="detail-label">Branch:</span>
                   <span class="muted mono">{currentSession.repo?.branch || "N/A"}</span>
                 </div>
+                {#if isSessionPaused()}
+                  <div class="detail-item">
+                    <span class="detail-label">Estado:</span>
+                    <span class="muted">⏸️ Pausada</span>
+                  </div>
+                {/if}
               </div>
             </div>
           </div>

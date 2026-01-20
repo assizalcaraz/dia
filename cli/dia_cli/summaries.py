@@ -53,12 +53,14 @@ def analyze_events(events: list[dict[str, Any]]) -> dict[str, Any]:
                 captures_without_fix.append(event)
         
         elif event_type == "FixLinked":
-            error_hash = event.get("payload", {}).get("error_hash")
-            # Remover de captures_without_fix si existe
-            captures_without_fix = [
-                c for c in captures_without_fix
-                if c.get("payload", {}).get("error_hash") != error_hash
-            ]
+            # Usar error_event_id para asociación precisa (permite errores repetidos con fixes independientes)
+            error_event_id = event.get("payload", {}).get("error_event_id")
+            if error_event_id:
+                # Remover de captures_without_fix si existe
+                captures_without_fix = [
+                    c for c in captures_without_fix
+                    if c.get("event_id") != error_event_id
+                ]
         
         elif event_type == "CommitSuggestionIssued":
             commit_suggestions.append(event)
@@ -72,15 +74,14 @@ def analyze_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         elif event_type == "CommitOverdue":
             commit_overdue = True
     
-    # Heurística 1: BLOCKED si hay errores sin fix
+    # Informar errores sin resolver pero NO bloquear el resumen rolling
     if captures_without_fix:
-        assessment = "BLOCKED"
-        blocker = f"{len(captures_without_fix)} error(es) sin fix"
-        next_step = f"Resolver {len(captures_without_fix)} error(es) abierto(s) antes de continuar"
-        risks.append("Errores sin resolver bloquean progreso")
+        error_count = len(captures_without_fix)
+        risks.append(f"{error_count} error(es) sin resolver")
+        # No cambiar assessment a BLOCKED - permitir que otras heurísticas determinen el estado
     
     # Heurística 2: OFF_TRACK si hay CommitOverdue o 0 commits con actividad
-    elif commit_overdue:
+    if commit_overdue:
         assessment = "OFF_TRACK"
         next_step = "Ejecutar 'dia pre-feat' para hacer commit de cambios pendientes"
         risks.append("Cambios sin commit pueden perderse")
@@ -97,8 +98,19 @@ def analyze_events(events: list[dict[str, Any]]) -> dict[str, Any]:
             next_step = "Revisar cambios y ejecutar 'dia pre-feat' si hay trabajo pendiente"
             risks.append("Actividad sin commits registrados")
     
-    # Heurística 3: ON_TRACK si hay sesiones cerradas y progreso
-    if assessment == "ON_TRACK":
+    # Actualizar next_step considerando errores abiertos sin bloquear
+    if captures_without_fix and assessment == "ON_TRACK":
+        # Si hay errores pero el estado es ON_TRACK, mencionarlos en next_step
+        error_count = len(captures_without_fix)
+        closed_sessions = sum(
+            1 for e in events if e.get("type") == "SessionEnded"
+        )
+        if closed_sessions > 0:
+            next_step = f"Continuar con siguiente tarea o cerrar sesión actual ({error_count} error(es) pendiente(s))"
+        else:
+            next_step = f"Trabajar en tareas del día ({error_count} error(es) pendiente(s))"
+    elif assessment == "ON_TRACK":
+        # Heurística 3: ON_TRACK si hay sesiones cerradas y progreso
         closed_sessions = sum(
             1 for e in events if e.get("type") == "SessionEnded"
         )
@@ -112,6 +124,7 @@ def analyze_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "next_step": next_step,
         "blocker": blocker,
         "risks": risks,
+        "open_errors_count": len(captures_without_fix),
     }
 
 
