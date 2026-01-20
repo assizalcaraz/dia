@@ -383,7 +383,7 @@ Muestra sección **"Errores abiertos"** con:
 
 Muestra métrica: **"Errores abiertos: N"** en el card de resumen.
 
-**Auto-refresh incremental**: Actualización silenciosa cada 5 segundos que preserva el estado de la UI (tooltips, scroll). Pausa automáticamente cuando la ventana no está visible. Ver [ALTERNATIVAS_REFRESH.md](../../modules/ui/ALTERNATIVAS_REFRESH.md) para detalles.
+**Auto-refresh incremental**: Actualización silenciosa cada 5 segundos que preserva el estado de la UI (tooltips, scroll). Pausa automáticamente cuando la ventana no está visible. Ver [ALTERNATIVAS_REFRESH.md](../../ui/design/ALTERNATIVAS_REFRESH.md) para detalles.
 
 ---
 

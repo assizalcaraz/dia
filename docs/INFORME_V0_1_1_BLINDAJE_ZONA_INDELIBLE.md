@@ -310,7 +310,7 @@ Los siguientes comandos están implementados pero no tienen guías en `docs/guid
 - Mencionar sistema de auditoría automática
 - Actualizar "Comandos base (v0.1)" a v0.1.1
 
-#### `docs/modules/App.md`
+#### `docs/ui/App.md`
 
 **Ajustes sugeridos**:
 - Documentar componente `ErrorFixCommitChain` en Zona Viva
@@ -539,7 +539,7 @@ No se detectaron tensiones ni contradicciones. La implementación respeta todos 
 
 1. **`docs/modules/cli/config.md`**: Actualizar con nuevas funciones
 2. **`docs/modules/api/endpoints.md`**: Agregar `/api/chain/latest/`
-3. **`docs/modules/App.md`**: Documentar `ErrorFixCommitChain`
+3. **`docs/ui/App.md`**: Documentar `ErrorFixCommitChain`
 4. **`docs/specs/NDJSON.md`**: Agregar 6 eventos nuevos
 
 #### Documentación de usuario

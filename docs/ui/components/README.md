@@ -20,10 +20,20 @@ Este directorio contiene la documentación técnica de los componentes Svelte de
 - **[`DocTreeNode`](./DocTreeNode.md)** — Componente recursivo para árbol de documentación
 - **[`MarkdownRenderer`](./MarkdownRenderer.md)** — Renderizador de contenido markdown
 
+### Componentes de Edición
+
+- **[`BitacoraEditor`](./BitacoraEditor.md)** — Editor de bitácoras diarias (secciones editables)
+
+### Componentes de Sesión
+
+- **[`SessionObjectives`](./SessionObjectives.md)** — Visualizador de objetivos de sesión (Intent y DoD)
+- **[`ErrorFixCommitChain`](./ErrorFixCommitChain.md)** — Visualizador de cadena Error→Fix→Commit
+- **[`TemporalNotesViewer`](./TemporalNotesViewer.md)** — Visualizador de notas temporales
+
 ### Feature Board
 
-- **[`BoardView`](../ui/BoardView.md)** — Feature Board fullscreen con canvas interactivo
-- **[`BoardElement`](../ui/BoardView.md#boardelement)** — Componente para renderizar elementos del board
+- **[`BoardView`](../BoardView.md)** — Feature Board fullscreen con canvas interactivo
+- **[`BoardElement`](./BoardElement.md)** — Componente para renderizar elementos del board
 
 ### Componente Principal
 
@@ -38,10 +48,14 @@ ui/src/
 ├── App.svelte              # Componente principal
 └── components/
     ├── BitacoraViewer.svelte
+    ├── BitacoraEditor.svelte
     ├── SummariesViewer.svelte
     ├── DocsViewer.svelte
     ├── DocTreeNode.svelte
     ├── MarkdownRenderer.svelte
+    ├── SessionObjectives.svelte
+    ├── ErrorFixCommitChain.svelte
+    ├── TemporalNotesViewer.svelte
     ├── BoardView.svelte    # Feature Board (v0.2)
     └── BoardElement.svelte # Elementos del board (v0.2)
 ```
@@ -54,11 +68,16 @@ ui/src/
 App.svelte
 ├── BitacoraViewer
 │   └── MarkdownRenderer
+├── BitacoraEditor
+│   └── MarkdownRenderer
 ├── SummariesViewer
 │   └── MarkdownRenderer
 ├── DocsViewer
 │   ├── DocTreeNode (recursivo)
 │   └── MarkdownRenderer
+├── SessionObjectives
+├── ErrorFixCommitChain
+├── TemporalNotesViewer
 └── BoardView (condicional)
     └── BoardElement
 ```
@@ -88,13 +107,13 @@ El componente principal `App.svelte` implementa un sistema de actualización inc
 - Pausa automáticamente cuando la ventana no está visible
 - Solo muestra indicador de carga en la carga inicial
 
-Ver [ALTERNATIVAS_REFRESH.md](../ui/ALTERNATIVAS_REFRESH.md) para documentación completa del sistema.
+Ver [ALTERNATIVAS_REFRESH.md](../design/ALTERNATIVAS_REFRESH.md) para documentación completa del sistema.
 
 ---
 
 ## Referencias
 
-- [Documentación de módulos CLI](../cli/README.md)
-- [Documentación de API](../api/endpoints.md)
+- [Documentación de módulos CLI](../../modules/cli/README.md)
+- [Documentación de API](../../modules/api/endpoints.md)
 - [Guías de comandos](../../guides/)
-- [Sistema de actualización incremental](../ui/ALTERNATIVAS_REFRESH.md)
+- [Sistema de actualización incremental](../design/ALTERNATIVAS_REFRESH.md)

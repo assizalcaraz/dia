@@ -45,8 +45,8 @@ Cuando se realizan cambios en el código, es importante actualizar la documentac
 **Descripción**: Documentación de componentes Svelte y UI.
 
 **Archivos incluidos**:
-- `docs/modules/components/*.md` (documentación de componentes)
-- `docs/modules/ui/*.md` (documentación de UI)
+- `docs/ui/components/*.md` (documentación de componentes)
+- `docs/ui/*.md` (documentación de UI)
 
 **Cuándo actualizar**:
 - ✅ Cambios en `ui/src/components/*.svelte`
@@ -58,7 +58,7 @@ Cuando se realizan cambios en el código, es importante actualizar la documentac
 **Ejemplo**:
 ```bash
 # Cambio: Agregar prop onClose a BoardView
-# Actualizar: docs/modules/components/BoardView.md
+# Actualizar: docs/ui/BoardView.md
 ```
 
 ---
@@ -115,8 +115,8 @@ Cuando se realizan cambios en el código, es importante actualizar la documentac
 **Archivos incluidos**:
 - `docs/overview/*.md` (vistas generales)
 - `docs/specs/*.md` (especificaciones)
-- `docs/RESUMEN_DISENO_DIA.md` (resumen de diseño)
-- `docs/ESTADO_ACTUAL.md` (estado actual)
+- `docs/overview/RESUMEN_DISENO_DIA.md` (resumen de diseño)
+- `docs/overview/ESTADO_ACTUAL.md` (estado actual)
 
 **Cuándo actualizar**:
 - ✅ Cambios arquitectónicos significativos
@@ -127,7 +127,7 @@ Cuando se realizan cambios en el código, es importante actualizar la documentac
 **Ejemplo**:
 ```bash
 # Cambio: Nueva decisión de usar Svelte stores para estado
-# Actualizar: docs/overview/ESTADO_ACTUAL.md, docs/RESUMEN_DISENO_DIA.md
+# Actualizar: docs/overview/ESTADO_ACTUAL.md, docs/overview/RESUMEN_DISENO_DIA.md
 ```
 
 ---

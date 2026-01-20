@@ -151,6 +151,6 @@ Panel derecho con sistema de tabs que muestra:
 - [BitacoraViewer](./components/BitacoraViewer.md) — Componente de bitácoras
 - [SummariesViewer](./components/SummariesViewer.md) — Componente de resúmenes
 - [DocsViewer](./components/DocsViewer.md) — Componente de documentación
-- [BoardView](./ui/BoardView.md) — Componente de Feature Board
-- [ALTERNATIVAS_REFRESH.md](./ui/ALTERNATIVAS_REFRESH.md) — Documentación sobre el sistema de actualización incremental
-- [Documentación de API](./api/endpoints.md) — Endpoints de la API
+- [BoardView](./BoardView.md) — Componente de Feature Board
+- [ALTERNATIVAS_REFRESH.md](./design/ALTERNATIVAS_REFRESH.md) — Documentación sobre el sistema de actualización incremental
+- [Documentación de API](../modules/api/endpoints.md) — Endpoints de la API
