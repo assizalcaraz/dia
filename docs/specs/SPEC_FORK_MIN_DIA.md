@@ -114,7 +114,7 @@ El scope de comandos permitidos debe estar explicitado (p. ej. allowlist de coma
 ## Lectura política (criterio de fondo)
 
 Este SPEC no busca “hacer segura” la IA prohibiéndola ni “hacerla libre” soltándole la correa.  
-Le asigna responsabilidad en un territorio donde equivocarse es barato: **staging primero**.
+Le asigna responsabilidad en un territorio donde equivocarse, hasta ahora, era humano.: **staging primero**.
 
 ---
 

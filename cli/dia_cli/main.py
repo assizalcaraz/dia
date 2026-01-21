@@ -1921,7 +1921,11 @@ def build_parser() -> argparse.ArgumentParser:
     e_parser = subparsers.add_parser(
         "E", help="Captura error con título automático (alias de 'cap --kind error --auto')", parents=[common]
     )
-    e_parser.add_argument("error_message", nargs="?", help="Mensaje de error (opcional, también se puede pasar por stdin)")
+    e_parser.add_argument(
+        "error_message", 
+        nargs="?", 
+        help="Mensaje de error (opcional). Para texto largo o con caracteres especiales (como &, |), usa stdin: 'dia E < archivo.txt' o heredoc"
+    )
     e_parser.add_argument("--repo", required=False, help="Path del repo (default: cwd)")
     e_parser.add_argument("--stdin", action="store_true", help="Leer desde stdin (default: auto-detect)")
     
@@ -1942,6 +1946,19 @@ def build_parser() -> argparse.ArgumentParser:
                 args.title = None
                 args.auto = True
                 result = cmd_cap(args)
+            except Exception as e:
+                # Si hay error al procesar el argumento, sugerir usar stdin
+                print(
+                    "Error procesando mensaje como argumento. "
+                    "Para texto largo o con caracteres especiales, usa stdin:\n"
+                    "  dia E --data-root ./data --area it < archivo.txt\n"
+                    "  o con heredoc:\n"
+                    "  dia E --data-root ./data --area it << 'EOF'\n"
+                    "  [tu texto aquí]\n"
+                    "  EOF",
+                    file=sys.stderr
+                )
+                raise
             finally:
                 # Restaurar stdin
                 sys.stdin = original_stdin

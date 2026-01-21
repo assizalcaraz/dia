@@ -20,7 +20,15 @@
   let openErrors = [];
   let dayToday = null; // Información del día actual
   let loading = true; // Solo para carga inicial
-  let today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  // Calcular fecha actual en zona horaria local (no UTC)
+  const getLocalDate = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  let today = getLocalDate(); // YYYY-MM-DD en zona horaria local
   let activeTab = "overview"; // overview, bitacora, summaries, docs, sessions
   let zonaVivaTab = "sesion"; // sesion, bitacora, objetivos, temporales
   let boardOpen = false; // Control de visibilidad del board
