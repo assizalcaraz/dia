@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="dia_clean.png" alt="/dia cover" width="800">
+</p>
+
 # /dia — v0.1
 
 Herramienta de hábito y cierre. Registra sesiones de trabajo en formato NDJSON y genera bitácoras inmutables.
