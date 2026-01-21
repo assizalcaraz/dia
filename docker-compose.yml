@@ -1,0 +1,41 @@
+services:
+  server:
+    build:
+      context: ./server
+    ports:
+      - "8000:8000"
+    environment:
+      - DJANGO_DEBUG=1
+      # DIA_DATA_ROOT apunta al volumen montado del directorio global
+      # Esto permite que el servidor acceda a los mismos datos que el CLI
+      - DIA_DATA_ROOT=/data-global
+      # Zona horaria: Buenos Aires, Argentina (UTC-3)
+      - TZ=America/Argentina/Buenos_Aires
+    volumes:
+      # Montar el directorio global de dia (macOS) - mismo que usa el CLI
+      - ${HOME}/Library/Application Support/dia:/data-global
+      # Montar también ./data local por si se necesita (legacy)
+      - ./data:/data-local
+      - ./server:/app
+      - ./docs:/docs
+    command: >
+      sh -lc "pip install -r requirements.txt &&
+              python manage.py migrate &&
+              python manage.py runserver 0.0.0.0:8000"
+
+  ui:
+    build:
+      context: ./ui
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_BASE=http://localhost:8000/api
+    volumes:
+      - ./ui:/app
+      - ui_node_modules:/app/node_modules
+    command: >
+      sh -lc "npm install &&
+              npm run dev -- --host 0.0.0.0 --port 5173"
+
+volumes:
+  ui_node_modules:
